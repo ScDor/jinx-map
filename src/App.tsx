@@ -6,12 +6,20 @@ import { fetchAndComputeAlarms, loadStoredAlarmsState } from './data/alarms'
 import type { NormalizedPolygon, PolygonsLoadSource } from './data/polygons'
 import { loadPolygons } from './data/polygons'
 import { MapContainer, Polygon as LeafletPolygon, Popup, TileLayer } from 'react-leaflet'
-import type { LatLngBoundsExpression, LatLngExpression } from 'leaflet'
+import type {
+  LatLngBoundsExpression,
+  LatLngExpression,
+  Map as LeafletMap,
+  Polygon as LeafletPolygonLayer,
+} from 'leaflet'
 import { computeFadeOpacity, computeMinutesSince } from './map/fade'
 
 const FADE_MINUTES_KEY = 'jinx.fadeMinutes'
 const DEFAULT_FADE_MINUTES = 60
 const MAP_TICK_MS = 30_000
+const SEARCH_DEBOUNCE_MS = 180
+const SEARCH_RESULTS_LIMIT = 7
+const RECENT_ZONES_LIMIT = 14
 
 function readStoredInt(key: string, fallback: number): number {
   try {
@@ -83,7 +91,10 @@ function App() {
   const fadeMinutesInputId = useId()
   const [initialAlarms] = useState(() => readInitialAlarms())
   const [searchText, setSearchText] = useState('')
+  const [debouncedSearchText, setDebouncedSearchText] = useState('')
+  const [isSearchFocused, setIsSearchFocused] = useState(false)
   const [isSettingsOpen, setIsSettingsOpen] = useState(false)
+  const [isZonesOpen, setIsZonesOpen] = useState(false)
   const [fadeMinutes, setFadeMinutes] = useState(() =>
     readStoredInt(FADE_MINUTES_KEY, DEFAULT_FADE_MINUTES),
   )
@@ -97,6 +108,9 @@ function App() {
   const [nowMs, setNowMs] = useState(() => Date.now())
   const isMountedRef = useRef(true)
   const refreshInFlightRef = useRef<Promise<void> | null>(null)
+  const mapRef = useRef<LeafletMap | null>(null)
+  const polygonLayersByNameRef = useRef<Map<string, LeafletPolygonLayer>>(new Map())
+  const searchInputRef = useRef<HTMLInputElement | null>(null)
 
   const refreshAlarms = useCallback(async () => {
     if (refreshInFlightRef.current) return refreshInFlightRef.current
@@ -181,6 +195,15 @@ function App() {
     }
   }, [])
 
+  useEffect(() => {
+    const handle = window.setTimeout(() => {
+      setDebouncedSearchText(searchText.trim())
+    }, SEARCH_DEBOUNCE_MS)
+    return () => {
+      window.clearTimeout(handle)
+    }
+  }, [searchText])
+
   const lastUpdatedLabel = useMemo(() => formatLastUpdated(lastUpdatedAt), [lastUpdatedAt])
   const polygonsLabel = useMemo(() => {
     if (isPolygonsLoading) return 'טוען פוליגונים…'
@@ -191,6 +214,75 @@ function App() {
 
   const polygonsBounds = useMemo(() => computePolygonsBounds(polygons), [polygons])
   const zoneLastAlarm = alarmsState?.zoneLastAlarm ?? {}
+  const polygonsByName = useMemo(() => {
+    const map = new Map<string, NormalizedPolygon>()
+    for (const polygon of polygons ?? []) {
+      map.set(polygon.name, polygon)
+    }
+    return map
+  }, [polygons])
+
+  const polygonSearchIndex = useMemo(() => {
+    return (polygons ?? []).map((polygon) => ({
+      name: polygon.name,
+      key: polygon.name.normalize('NFKC'),
+    }))
+  }, [polygons])
+
+  const searchMatches = useMemo(() => {
+    const query = debouncedSearchText.normalize('NFKC')
+    if (!query) return []
+    const matches = polygonSearchIndex
+      .map((entry) => ({ name: entry.name, index: entry.key.indexOf(query) }))
+      .filter((entry) => entry.index >= 0)
+      .sort((a, b) => {
+        if (a.index !== b.index) return a.index - b.index
+        return a.name.length - b.name.length
+      })
+      .slice(0, SEARCH_RESULTS_LIMIT)
+      .map((entry) => entry.name)
+    return matches
+  }, [debouncedSearchText, polygonSearchIndex])
+
+  const recentZones = useMemo(() => {
+    const entries: Array<{ name: string; alarmAt: Date; alarmAtMs: number; minutesSince: number }> = []
+    for (const [name, value] of Object.entries(zoneLastAlarm)) {
+      if (!polygonsByName.has(name)) continue
+      const alarmAt = new Date(value)
+      const alarmAtMs = alarmAt.getTime()
+      if (!Number.isFinite(alarmAtMs)) continue
+      entries.push({
+        name,
+        alarmAt,
+        alarmAtMs,
+        minutesSince: computeMinutesSince({ nowMs, alarmAtMs }),
+      })
+    }
+    entries.sort((a, b) => b.alarmAtMs - a.alarmAtMs)
+    return entries.slice(0, RECENT_ZONES_LIMIT)
+  }, [nowMs, polygonsByName, zoneLastAlarm])
+
+  const focusZoneByName = useCallback(
+    (name: string) => {
+      const polygon = polygonsByName.get(name)
+      if (!polygon) return
+      setSearchText(name)
+      setIsZonesOpen(false)
+      const [minLat, minLng, maxLat, maxLng] = polygon.bounds
+      mapRef.current?.fitBounds(
+        [
+          [minLat, minLng],
+          [maxLat, maxLng],
+        ],
+        { padding: [32, 32], maxZoom: 13 },
+      )
+      window.setTimeout(() => {
+        polygonLayersByNameRef.current.get(name)?.openPopup()
+      }, 0)
+      searchInputRef.current?.blur()
+    },
+    [polygonsByName],
+  )
 
   return (
     <div className="app">
@@ -202,6 +294,7 @@ function App() {
           <div className="topbarActions">
             <div className="searchWrap" role="search">
               <input
+                ref={searchInputRef}
                 className="searchInput"
                 type="search"
                 inputMode="search"
@@ -210,7 +303,37 @@ function App() {
                 aria-label="חיפוש אזור"
                 value={searchText}
                 onChange={(event) => setSearchText(event.target.value)}
+                onFocus={() => setIsSearchFocused(true)}
+                onBlur={() => setIsSearchFocused(false)}
+                onKeyDown={(event) => {
+                  if (event.key === 'Escape') {
+                    setSearchText('')
+                    setDebouncedSearchText('')
+                    searchInputRef.current?.blur()
+                    return
+                  }
+                  if (event.key !== 'Enter') return
+                  const firstMatch = searchMatches[0]
+                  if (!firstMatch) return
+                  event.preventDefault()
+                  focusZoneByName(firstMatch)
+                }}
               />
+              {isSearchFocused && searchMatches.length > 0 ? (
+                <div className="searchResults" role="listbox" aria-label="תוצאות חיפוש">
+                  {searchMatches.map((name) => (
+                    <button
+                      key={name}
+                      type="button"
+                      className="searchResultButton"
+                      onMouseDown={(event) => event.preventDefault()}
+                      onClick={() => focusZoneByName(name)}
+                    >
+                      {name}
+                    </button>
+                  ))}
+                </div>
+              ) : null}
             </div>
             <button
               type="button"
@@ -225,9 +348,30 @@ function App() {
             <button
               type="button"
               className="actionButton"
+              aria-expanded={isZonesOpen}
+              aria-controls="zonesPanel"
+              onClick={() => {
+                setIsZonesOpen((current) => {
+                  const next = !current
+                  if (next) setIsSettingsOpen(false)
+                  return next
+                })
+              }}
+            >
+              אזורים
+            </button>
+            <button
+              type="button"
+              className="actionButton"
               aria-expanded={isSettingsOpen}
               aria-controls="settingsPanel"
-              onClick={() => setIsSettingsOpen((current) => !current)}
+              onClick={() => {
+                setIsSettingsOpen((current) => {
+                  const next = !current
+                  if (next) setIsZonesOpen(false)
+                  return next
+                })
+              }}
             >
               הגדרות
             </button>
@@ -280,6 +424,41 @@ function App() {
           </div>
         </aside>
 
+        <aside
+          id="zonesPanel"
+          className={isZonesOpen ? 'zonesPanel zonesPanelOpen' : 'zonesPanel'}
+          aria-label="רשימת אזורים"
+        >
+          <div className="settingsHeader">
+            <div className="settingsTitle">אזעקות אחרונות</div>
+            <button type="button" className="actionButton" onClick={() => setIsZonesOpen(false)}>
+              סגירה
+            </button>
+          </div>
+          <div className="settingsBody">
+            {recentZones.length === 0 ? (
+              <div className="fieldHint">אין אזעקות תואמות עדיין (התאמה מדויקת בלבד).</div>
+            ) : (
+              <div className="zonesList" role="list">
+                {recentZones.map((entry) => (
+                  <button
+                    key={entry.name}
+                    type="button"
+                    className="zoneRow"
+                    onClick={() => focusZoneByName(entry.name)}
+                  >
+                    <div className="zoneName">{entry.name}</div>
+                    <div className="zoneMeta">
+                      <span>לפני {entry.minutesSince} דק׳</span>
+                      <span className="zoneTimestamp">{formatAlarmTimestamp(entry.alarmAt)}</span>
+                    </div>
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+        </aside>
+
         <div className="mapWrap" aria-label="מפת ישראל">
           <MapContainer
             className="mapContainer"
@@ -289,6 +468,9 @@ function App() {
             boundsOptions={{ padding: [12, 12] }}
             scrollWheelZoom
             preferCanvas
+            whenCreated={(map) => {
+              mapRef.current = map
+            }}
           >
             <TileLayer
               attribution="&copy; OpenStreetMap contributors"
@@ -322,7 +504,18 @@ function App() {
                   }
 
               return (
-                <LeafletPolygon key={polygon.name} positions={positions} pathOptions={pathOptions}>
+                <LeafletPolygon
+                  key={polygon.name}
+                  positions={positions}
+                  pathOptions={pathOptions}
+                  ref={(layer) => {
+                    if (layer) {
+                      polygonLayersByNameRef.current.set(polygon.name, layer)
+                    } else {
+                      polygonLayersByNameRef.current.delete(polygon.name)
+                    }
+                  }}
+                >
                   <Popup>
                     <div className="popupTitle">{polygon.name}</div>
                     {isMatched && alarmAt && minutesSince !== null ? (

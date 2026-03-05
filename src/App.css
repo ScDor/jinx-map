@@ -37,6 +37,7 @@
 .searchWrap {
   flex: 1;
   min-width: 160px;
+  position: relative;
 }
 
 .searchInput {
@@ -51,6 +52,38 @@
 
 .searchInput::placeholder {
   color: var(--muted);
+}
+
+.searchResults {
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 0;
+  right: 0;
+  z-index: 30;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  box-shadow: 0 14px 36px rgba(15, 23, 42, 0.12);
+  overflow: hidden;
+  display: grid;
+}
+
+.searchResultButton {
+  text-align: right;
+  border: 0;
+  border-bottom: 1px solid rgba(15, 23, 42, 0.06);
+  border-radius: 0;
+  padding: 10px 12px;
+  background: var(--surface);
+  font-weight: 650;
+}
+
+.searchResultButton:last-child {
+  border-bottom: 0;
+}
+
+.searchResultButton:hover {
+  background: rgba(15, 23, 42, 0.04);
 }
 
 .actionButton {
@@ -122,6 +155,25 @@
   transform: translateX(0);
 }
 
+.zonesPanel {
+  position: absolute;
+  top: 0;
+  left: 0;
+  z-index: 19;
+  height: 100%;
+  width: min(360px, 92vw);
+  background: var(--surface);
+  border-right: 1px solid var(--border);
+  transform: translateX(-100%);
+  transition: transform 180ms ease;
+  display: grid;
+  grid-template-rows: auto 1fr;
+}
+
+.zonesPanelOpen {
+  transform: translateX(0);
+}
+
 .settingsHeader {
   padding: 12px 14px;
   border-bottom: 1px solid var(--border);
@@ -161,6 +213,40 @@
 .fieldHint {
   font-size: 12px;
   color: var(--muted);
+}
+
+.zonesList {
+  display: grid;
+  gap: 8px;
+}
+
+.zoneRow {
+  width: 100%;
+  text-align: right;
+  display: grid;
+  gap: 4px;
+  padding: 10px 12px;
+  border-radius: 12px;
+  border: 1px solid rgba(15, 23, 42, 0.08);
+  background: rgba(15, 23, 42, 0.02);
+}
+
+.zoneName {
+  font-size: 14px;
+  font-weight: 800;
+}
+
+.zoneMeta {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.zoneTimestamp {
+  direction: ltr;
+  unicode-bidi: plaintext;
 }
 
 .placeholder {
