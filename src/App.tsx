@@ -592,9 +592,7 @@ function App() {
             boundsOptions={{ padding: [12, 12] }}
             scrollWheelZoom
             preferCanvas
-            whenCreated={(map) => {
-              mapRef.current = map
-            }}
+            ref={mapRef}
           >
             <TileLayer
               attribution="&copy; OpenStreetMap contributors"

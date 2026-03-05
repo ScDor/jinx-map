@@ -47,7 +47,8 @@ This phase bootstraps a Hebrew-only, client-only single-page app that runs local
   - If realtime fails (CORS/geo/blocked): automatically disable realtime and continue using CSV-only, with clear status text (“ריל־טיים לא זמין, משתמשים ב־CSV”)
   - Notes: added best-effort poller for Oref `warningMessages/alert/Alerts.json` with exponential backoff + auto-disable; forces active opacity for realtime areas until CSV catches up; covered by new `src/App.test.tsx` cases
 
-- [ ] Manual verification checklist (run locally) and fix any issues:
+- [x] Manual verification checklist (run locally) and fix any issues:
   - `npm install`, `npm run dev` → map renders with polygons even offline (fixtures)
   - With network: CSV fetch updates “last updated” and polygon opacities change after refresh
   - Search selects and zooms correctly; refresh works; fade duration setting changes opacity behavior live
+  - Notes: fixed production build TypeScript errors with react-leaflet v5 by replacing `whenCreated` with `ref`; updated react-leaflet test mock accordingly; verified `npm test`, `npm run lint`, `npm run build`.
