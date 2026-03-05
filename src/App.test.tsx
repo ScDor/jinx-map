@@ -31,15 +31,26 @@ vi.mock('react-leaflet', async () => {
       return <div data-testid="leaflet-map">{children}</div>
     },
     TileLayer: () => null,
-    Polygon: React.forwardRef(({ children }: { children?: React.ReactNode }, ref) => {
+    Polygon: React.forwardRef(
+      (
+        { children, pathOptions }: { children?: React.ReactNode; pathOptions?: Record<string, unknown> },
+        ref,
+      ) => {
+        const fillOpacity = pathOptions?.fillOpacity
+        const fillOpacityLabel = typeof fillOpacity === 'number' ? String(fillOpacity) : ''
       React.useEffect(() => {
         if (typeof ref === 'function') ref({ openPopup: openPopupSpy })
         return () => {
           if (typeof ref === 'function') ref(null)
         }
       }, [ref])
-      return <div data-testid="leaflet-polygon">{children}</div>
-    }),
+      return (
+        <div data-testid="leaflet-polygon" data-fill-opacity={fillOpacityLabel}>
+          {children}
+        </div>
+      )
+    },
+    ),
     Popup: ({ children }: { children?: React.ReactNode }) => (
       <div data-testid="leaflet-popup">{children}</div>
     ),
@@ -85,6 +96,13 @@ beforeEach(() => {
 
       if (url.endsWith('/fixtures/polygons.fixture.json') || url === '/fixtures/polygons.fixture.json') {
         return new Response(JSON.stringify(polygonsPayload), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        })
+      }
+
+      if (url.includes('warningMessages/alert/Alerts.json')) {
+        return new Response(JSON.stringify({ title: '', data: [] }), {
           status: 200,
           headers: { 'Content-Type': 'application/json' },
         })
@@ -212,4 +230,70 @@ test('recent zones panel lists alarms and allows focusing', async () => {
   expect(fitBoundsSpy).toHaveBeenCalledTimes(1)
   vi.runOnlyPendingTimers()
   expect(openPopupSpy).toHaveBeenCalledTimes(1)
+})
+
+test('realtime payload forces full-opacity highlight for matching areas', async () => {
+  vi.stubGlobal(
+    'fetch',
+    vi.fn(async (input: RequestInfo | URL) => {
+      const url = typeof input === 'string' ? input : String(input)
+      if (url.endsWith('/polygons.json') || url === '/polygons.json') {
+        return new Response(JSON.stringify(polygonsPayload), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        })
+      }
+      if (url.includes('warningMessages/alert/Alerts.json')) {
+        return new Response(JSON.stringify({ title: 'בדיקה', data: ['אזור בדיקה 1'] }), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        })
+      }
+      return new Response('not found', { status: 404 })
+    }),
+  )
+
+  render(<App />)
+  const polygon = await screen.findByTestId('leaflet-polygon')
+
+  await act(async () => {
+    for (let i = 0; i < 20; i += 1) {
+      await Promise.resolve()
+    }
+  })
+
+  expect(polygon.getAttribute('data-fill-opacity')).toBe('1')
+})
+
+test('realtime disables itself after repeated failures and keeps CSV-only mode', async () => {
+  vi.useFakeTimers()
+
+  vi.stubGlobal(
+    'fetch',
+    vi.fn(async (input: RequestInfo | URL) => {
+      const url = typeof input === 'string' ? input : String(input)
+      if (url.endsWith('/polygons.json') || url === '/polygons.json') {
+        return new Response(JSON.stringify(polygonsPayload), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        })
+      }
+      if (url.includes('warningMessages/alert/Alerts.json')) {
+        throw new TypeError('Failed to fetch')
+      }
+      return new Response('not found', { status: 404 })
+    }),
+  )
+
+  render(<App />)
+  await act(async () => {
+    for (let i = 0; i < 12; i += 1) {
+      vi.advanceTimersByTime(60_000)
+      for (let j = 0; j < 10; j += 1) {
+        await Promise.resolve()
+      }
+    }
+  })
+
+  expect(screen.getByLabelText('סטטוס')).toHaveTextContent('ריל־טיים לא זמין, משתמשים ב־CSV')
 })

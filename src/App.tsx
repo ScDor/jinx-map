@@ -3,6 +3,7 @@ import './App.css'
 import { appConfig } from './config'
 import type { AlarmsComputedStateV1 } from './data/alarms'
 import { fetchAndComputeAlarms, loadStoredAlarmsState } from './data/alarms'
+import { fetchOrefRealtimeAlerts } from './data/realtime'
 import type { NormalizedPolygon, PolygonsLoadSource } from './data/polygons'
 import { loadPolygons } from './data/polygons'
 import { MapContainer, Polygon as LeafletPolygon, Popup, TileLayer } from 'react-leaflet'
@@ -20,6 +21,17 @@ const MAP_TICK_MS = 30_000
 const SEARCH_DEBOUNCE_MS = 180
 const SEARCH_RESULTS_LIMIT = 7
 const RECENT_ZONES_LIMIT = 14
+const REALTIME_BACKOFF_BASE_MS = 800
+const REALTIME_BACKOFF_MAX_MS = 60_000
+const REALTIME_HISTORY_REPLACED_SKEW_MS = 60_000
+
+function computeEffectiveAlarmAtMs(csvAtMs: number | null, realtimeAtMs: number | null): number | null {
+  if (csvAtMs === null && realtimeAtMs === null) return null
+  if (csvAtMs === null) return realtimeAtMs
+  if (realtimeAtMs === null) return csvAtMs
+  if (csvAtMs >= realtimeAtMs - REALTIME_HISTORY_REPLACED_SKEW_MS) return csvAtMs
+  return Math.max(csvAtMs, realtimeAtMs)
+}
 
 function readStoredInt(key: string, fallback: number): number {
   try {
@@ -106,6 +118,15 @@ function App() {
   const [isAlarmsLoading, setIsAlarmsLoading] = useState(false)
   const [alarmsState, setAlarmsState] = useState<AlarmsComputedStateV1 | null>(initialAlarms.state)
   const [nowMs, setNowMs] = useState(() => Date.now())
+  const [realtimeMode, setRealtimeMode] = useState<
+    'disabled' | 'connecting' | 'available' | 'unavailable'
+  >(() => (appConfig.realtimeEnabled ? 'connecting' : 'disabled'))
+  const [realtimeForcedActiveZones, setRealtimeForcedActiveZones] = useState<Set<string>>(
+    () => new Set(),
+  )
+  const [realtimeLastAlarmByZoneMs, setRealtimeLastAlarmByZoneMs] = useState<Record<string, number>>(
+    () => ({}),
+  )
   const isMountedRef = useRef(true)
   const refreshInFlightRef = useRef<Promise<void> | null>(null)
   const mapRef = useRef<LeafletMap | null>(null)
@@ -204,6 +225,82 @@ function App() {
     }
   }, [searchText])
 
+  useEffect(() => {
+    if (!appConfig.realtimeEnabled) return
+
+    let cancelled = false
+    let timeout: number | null = null
+    let consecutiveFailures = 0
+    let lastSignature: string | null = null
+
+    const schedule = (delayMs: number) => {
+      if (cancelled) return
+      timeout = window.setTimeout(() => {
+        void poll()
+      }, delayMs)
+    }
+
+    const computeBackoffMs = () => {
+      const exponent = Math.max(0, consecutiveFailures - 1)
+      const raw = REALTIME_BACKOFF_BASE_MS * 2 ** exponent
+      return Math.min(REALTIME_BACKOFF_MAX_MS, raw)
+    }
+
+    const poll = async () => {
+      if (cancelled) return
+      setRealtimeMode((mode) => (mode === 'available' ? 'available' : 'connecting'))
+
+      try {
+        const payload = await fetchOrefRealtimeAlerts(appConfig.realtimeAlertsUrl)
+        if (cancelled || !isMountedRef.current) return
+
+        consecutiveFailures = 0
+        setRealtimeMode('available')
+
+        const areas = payload.areas
+        const signature = `${payload.alertDateIso ?? ''}|${payload.title ?? ''}|${areas.join(',')}`
+        if (signature === lastSignature) {
+          schedule(appConfig.realtimePollSeconds * 1000)
+          return
+        }
+
+        lastSignature = signature
+        const alarmAtMs = Date.now()
+
+        if (areas.length === 0) {
+          setRealtimeForcedActiveZones(new Set())
+          schedule(appConfig.realtimePollSeconds * 1000)
+          return
+        }
+
+        setRealtimeLastAlarmByZoneMs((current) => {
+          const next = { ...current }
+          for (const name of areas) {
+            next[name] = alarmAtMs
+          }
+          return next
+        })
+        setRealtimeForcedActiveZones(new Set(areas))
+        schedule(appConfig.realtimePollSeconds * 1000)
+      } catch {
+        if (cancelled || !isMountedRef.current) return
+        consecutiveFailures += 1
+        if (consecutiveFailures >= appConfig.realtimeMaxFailures) {
+          setRealtimeMode('unavailable')
+          setRealtimeForcedActiveZones(new Set())
+          return
+        }
+        schedule(computeBackoffMs())
+      }
+    }
+
+    schedule(0)
+    return () => {
+      cancelled = true
+      if (timeout !== null) window.clearTimeout(timeout)
+    }
+  }, [])
+
   const lastUpdatedLabel = useMemo(() => formatLastUpdated(lastUpdatedAt), [lastUpdatedAt])
   const polygonsLabel = useMemo(() => {
     if (isPolygonsLoading) return 'טוען פוליגונים…'
@@ -213,7 +310,14 @@ function App() {
   }, [isPolygonsLoading, polygons, polygonsSource])
 
   const polygonsBounds = useMemo(() => computePolygonsBounds(polygons), [polygons])
-  const zoneLastAlarm = alarmsState?.zoneLastAlarm ?? {}
+  const zoneLastAlarm = useMemo(() => alarmsState?.zoneLastAlarm ?? {}, [alarmsState])
+  const realtimeLabel = useMemo(() => {
+    if (!appConfig.realtimeEnabled) return 'ריל־טיים: כבוי'
+    if (realtimeMode === 'connecting') return 'מנסה ריל־טיים…'
+    if (realtimeMode === 'unavailable') return 'ריל־טיים לא זמין, משתמשים ב־CSV'
+    if (realtimeForcedActiveZones.size > 0) return 'ריל־טיים: פעיל'
+    return 'ריל־טיים: זמין'
+  }, [realtimeForcedActiveZones.size, realtimeMode])
   const polygonsByName = useMemo(() => {
     const map = new Map<string, NormalizedPolygon>()
     for (const polygon of polygons ?? []) {
@@ -244,13 +348,33 @@ function App() {
     return matches
   }, [debouncedSearchText, polygonSearchIndex])
 
+  const effectiveZoneLastAlarmMs = useMemo(() => {
+    const map = new Map<string, number>()
+    const names = new Set<string>([
+      ...Object.keys(zoneLastAlarm),
+      ...Object.keys(realtimeLastAlarmByZoneMs),
+    ])
+
+    for (const name of names) {
+      const csvIso = zoneLastAlarm[name]
+      const csvAtMs = csvIso ? new Date(csvIso).getTime() : null
+      const csvAtMsValid = csvAtMs !== null && Number.isFinite(csvAtMs) ? csvAtMs : null
+      const realtimeAtMsRaw = realtimeLastAlarmByZoneMs[name]
+      const realtimeAtMs =
+        typeof realtimeAtMsRaw === 'number' && Number.isFinite(realtimeAtMsRaw) ? realtimeAtMsRaw : null
+
+      const effective = computeEffectiveAlarmAtMs(csvAtMsValid, realtimeAtMs)
+      if (effective === null) continue
+      map.set(name, effective)
+    }
+    return map
+  }, [realtimeLastAlarmByZoneMs, zoneLastAlarm])
+
   const recentZones = useMemo(() => {
     const entries: Array<{ name: string; alarmAt: Date; alarmAtMs: number; minutesSince: number }> = []
-    for (const [name, value] of Object.entries(zoneLastAlarm)) {
+    for (const [name, alarmAtMs] of effectiveZoneLastAlarmMs.entries()) {
       if (!polygonsByName.has(name)) continue
-      const alarmAt = new Date(value)
-      const alarmAtMs = alarmAt.getTime()
-      if (!Number.isFinite(alarmAtMs)) continue
+      const alarmAt = new Date(alarmAtMs)
       entries.push({
         name,
         alarmAt,
@@ -260,7 +384,7 @@ function App() {
     }
     entries.sort((a, b) => b.alarmAtMs - a.alarmAtMs)
     return entries.slice(0, RECENT_ZONES_LIMIT)
-  }, [nowMs, polygonsByName, zoneLastAlarm])
+  }, [effectiveZoneLastAlarmMs, nowMs, polygonsByName])
 
   const focusZoneByName = useCallback(
     (name: string) => {
@@ -379,7 +503,7 @@ function App() {
         </div>
         <div className="status" aria-label="סטטוס">
           אב־טיפוס מקומי • {polygonsLabel} • ריענון כל {appConfig.apiPollSeconds} שנ׳ • עודכן לאחרונה:{' '}
-          {lastUpdatedLabel}
+          {lastUpdatedLabel} • {realtimeLabel}
           {isAlarmsLoading ? ' • מעדכן…' : ''}
         </div>
       </header>
@@ -477,14 +601,29 @@ function App() {
               url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
             />
             {polygons?.map((polygon) => {
-              const matchIso = zoneLastAlarm[polygon.name]
-              const alarmAt = matchIso ? new Date(matchIso) : null
-              const alarmAtMs = alarmAt && Number.isFinite(alarmAt.getTime()) ? alarmAt.getTime() : null
-              const isMatched = alarmAtMs !== null
-              const fadeOpacity = isMatched
-                ? computeFadeOpacity({ nowMs, alarmAtMs, fadeMinutes })
-                : 0
-              const minutesSince = isMatched ? computeMinutesSince({ nowMs, alarmAtMs }) : null
+              const csvIso = zoneLastAlarm[polygon.name]
+              const csvAt = csvIso ? new Date(csvIso) : null
+              const csvAtMs = csvAt && Number.isFinite(csvAt.getTime()) ? csvAt.getTime() : null
+              const realtimeAtMs = realtimeLastAlarmByZoneMs[polygon.name] ?? null
+              const effectiveAlarmAtMs = computeEffectiveAlarmAtMs(csvAtMs, realtimeAtMs)
+              const isHistoryReplaced =
+                csvAtMs !== null &&
+                realtimeAtMs !== null &&
+                csvAtMs >= realtimeAtMs - REALTIME_HISTORY_REPLACED_SKEW_MS
+              const isMatched = effectiveAlarmAtMs !== null
+              const isForcedActive =
+                realtimeAtMs !== null && realtimeForcedActiveZones.has(polygon.name) && !isHistoryReplaced
+              const fadeOpacity =
+                isMatched && effectiveAlarmAtMs !== null && !isForcedActive
+                  ? computeFadeOpacity({ nowMs, alarmAtMs: effectiveAlarmAtMs, fadeMinutes })
+                  : isForcedActive
+                    ? 1
+                    : 0
+              const minutesSince =
+                isMatched && effectiveAlarmAtMs !== null
+                  ? computeMinutesSince({ nowMs, alarmAtMs: effectiveAlarmAtMs })
+                  : null
+              const alarmAt = effectiveAlarmAtMs !== null ? new Date(effectiveAlarmAtMs) : null
 
               const positions: LatLngExpression[] | LatLngExpression[][] = polygon.rings
               const pathOptions = isMatched
@@ -522,6 +661,11 @@ function App() {
                       <div className="popupBody">
                         <div>דקות מאז אזעקה: {minutesSince}</div>
                         <div>זמן אזעקה: {formatAlarmTimestamp(alarmAt)}</div>
+                        {isForcedActive ? (
+                          <div>סטטוס: פעיל (ריל־טיים; ממתינים ל־CSV)</div>
+                        ) : csvAtMs === null && realtimeAtMs !== null ? (
+                          <div>מקור: ריל־טיים (טרם הופיע ב־CSV)</div>
+                        ) : null}
                       </div>
                     ) : (
                       <div className="popupBody">אין התאמה מדויקת ב־CSV.</div>
