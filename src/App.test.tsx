@@ -12,6 +12,22 @@ vi.mock('./data/alarms', () => ({
   loadStoredAlarmsState: vi.fn(() => null),
 }))
 
+vi.mock('react-leaflet', async () => {
+  const React = await import('react')
+  return {
+    MapContainer: ({ children }: { children?: React.ReactNode }) => (
+      <div data-testid="leaflet-map">{children}</div>
+    ),
+    TileLayer: () => null,
+    Polygon: ({ children }: { children?: React.ReactNode }) => (
+      <div data-testid="leaflet-polygon">{children}</div>
+    ),
+    Popup: ({ children }: { children?: React.ReactNode }) => (
+      <div data-testid="leaflet-popup">{children}</div>
+    ),
+  }
+})
+
 import App from './App'
 
 const polygonsPayload = {
@@ -73,6 +89,12 @@ test('renders Hebrew RTL shell controls', () => {
   expect(status).toHaveTextContent('ריענון כל 60 שנ׳')
 })
 
+test('renders a map with polygons overlay', async () => {
+  render(<App />)
+  expect(await screen.findByTestId('leaflet-map')).toBeInTheDocument()
+  expect(await screen.findAllByTestId('leaflet-polygon')).toHaveLength(1)
+})
+
 test('persists fade duration minutes in localStorage', () => {
   localStorage.setItem('jinx.fadeMinutes', '45')
   render(<App />)
@@ -99,6 +121,7 @@ test('updates last-updated indicator on refresh', async () => {
   vi.setSystemTime(new Date('2026-03-05T12:00:00.000Z'))
   render(<App />)
 
+  vi.runOnlyPendingTimers()
   await flush()
   expect(screen.getByLabelText('סטטוס')).toHaveTextContent('עודכן לאחרונה: 12:00')
 
