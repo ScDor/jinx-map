@@ -150,7 +150,8 @@ export async function fetchAndComputeAlarms(
   options: FetchAlarmsCsvOptions,
 ): Promise<AlarmsComputedStateV1> {
   const tailBytes = options.tailBytes ?? 512_000;
-  const fixturesPath = options.fixturesPath ?? '/fixtures/alarms.fixture.csv';
+  const fixturesPath =
+    options.fixturesPath ?? `${import.meta.env.BASE_URL}fixtures/alarms.fixture.csv`;
 
   const computedAt = new Date().toISOString();
 

@@ -88,11 +88,15 @@ function coercePayload(value: unknown): PolygonsPayloadV1 {
 }
 
 export async function loadPolygons(): Promise<LoadPolygonsResult> {
+  const baseUrl = import.meta.env.BASE_URL;
+  const polygonsUrl = `${baseUrl}polygons.json`;
+  const fixturesUrl = `${baseUrl}fixtures/polygons.fixture.json`;
+
   try {
-    const raw = await fetchJson('/polygons.json');
+    const raw = await fetchJson(polygonsUrl);
     return { source: 'polygons.json', payload: coercePayload(raw) };
   } catch {
-    const raw = await fetchJson('/fixtures/polygons.fixture.json');
+    const raw = await fetchJson(fixturesUrl);
     return { source: 'fixtures', payload: coercePayload(raw) };
   }
 }
