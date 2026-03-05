@@ -56,7 +56,10 @@ export function storeAlarmsState(state: AlarmsComputedStateV1): void {
 }
 
 function normalizeZoneName(raw: string): string {
-  return raw.replace(/^\uFEFF/, '').trim();
+  return raw
+    .replace(/^\uFEFF/, '')
+    .trim()
+    .normalize('NFKC');
 }
 
 function parseAlarmTimestamp(raw: string): Date | null {
