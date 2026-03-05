@@ -34,10 +34,11 @@ This phase bootstraps a Hebrew-only, client-only single-page app that runs local
   - Color: red for matched zones (with computed opacity); neutral/gray for unmatched zones (v1 exact matches only)
   - Add hover/tap tooltip or popup: zone name + “minutes since last alarm” (Hebrew), plus the alarm timestamp
 
-- [ ] Add search + focus (Hebrew-only) and a lightweight zones list:
+- [x] Add search + focus (Hebrew-only) and a lightweight zones list:
   - Implement search-as-you-type over polygon names (debounced), showing top N matches
   - Selecting a result fits bounds/zooms to polygon and opens its popup
   - Add an optional compact list panel (collapsible on mobile) showing “most recently alarmed” zones for quick navigation
+  - Notes: wired Leaflet `fitBounds` + `openPopup`, added “אזורים” panel; covered by `src/App.test.tsx`
 
 - [ ] Add best-effort realtime attempt without risking the prototype:
   - Read `amitfin/oref_alert` implementation to identify any browser-callable realtime endpoints (WebSocket or HTTP) it uses
