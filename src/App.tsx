@@ -25,6 +25,13 @@ const REALTIME_BACKOFF_BASE_MS = 800;
 const REALTIME_BACKOFF_MAX_MS = 60_000;
 const REALTIME_HISTORY_REPLACED_SKEW_MS = 60_000;
 
+function normalizeZoneKey(raw: string): string {
+  return raw
+    .replace(/^\uFEFF/, '')
+    .trim()
+    .normalize('NFKC');
+}
+
 function computeEffectiveAlarmAtMs(
   csvAtMs: number | null,
   realtimeAtMs: number | null,
@@ -281,11 +288,11 @@ function App() {
         setRealtimeLastAlarmByZoneMs((current) => {
           const next = { ...current };
           for (const name of areas) {
-            next[name] = alarmAtMs;
+            next[normalizeZoneKey(name)] = alarmAtMs;
           }
           return next;
         });
-        setRealtimeForcedActiveZones(new Set(areas));
+        setRealtimeForcedActiveZones(new Set(areas.map(normalizeZoneKey)));
         schedule(appConfig.realtimePollSeconds * 1000);
       } catch {
         if (cancelled || !isMountedRef.current) return;
@@ -326,7 +333,7 @@ function App() {
   const polygonsByName = useMemo(() => {
     const map = new Map<string, NormalizedPolygon>();
     for (const polygon of polygons ?? []) {
-      map.set(polygon.name, polygon);
+      map.set(normalizeZoneKey(polygon.name), polygon);
     }
     return map;
   }, [polygons]);
@@ -353,38 +360,47 @@ function App() {
     return matches;
   }, [debouncedSearchText, polygonSearchIndex]);
 
+  const normalizedZoneLastAlarm = useMemo(() => {
+    const map = new Map<string, string>();
+    for (const [name, iso] of Object.entries(zoneLastAlarm)) {
+      map.set(normalizeZoneKey(name), iso);
+    }
+    return map;
+  }, [zoneLastAlarm]);
+
+  const normalizedRealtimeLastAlarmByZoneMs = useMemo(() => {
+    const map = new Map<string, number>();
+    for (const [name, alarmAtMs] of Object.entries(realtimeLastAlarmByZoneMs)) {
+      if (typeof alarmAtMs !== 'number' || !Number.isFinite(alarmAtMs)) continue;
+      map.set(normalizeZoneKey(name), alarmAtMs);
+    }
+    return map;
+  }, [realtimeLastAlarmByZoneMs]);
+
   const effectiveZoneLastAlarmMs = useMemo(() => {
     const map = new Map<string, number>();
-    const names = new Set<string>([
-      ...Object.keys(zoneLastAlarm),
-      ...Object.keys(realtimeLastAlarmByZoneMs),
-    ]);
-
-    for (const name of names) {
-      const csvIso = zoneLastAlarm[name];
+    for (const [key] of polygonsByName.entries()) {
+      const csvIso = normalizedZoneLastAlarm.get(key);
       const csvAtMs = csvIso ? new Date(csvIso).getTime() : null;
       const csvAtMsValid = csvAtMs !== null && Number.isFinite(csvAtMs) ? csvAtMs : null;
-      const realtimeAtMsRaw = realtimeLastAlarmByZoneMs[name];
-      const realtimeAtMs =
-        typeof realtimeAtMsRaw === 'number' && Number.isFinite(realtimeAtMsRaw)
-          ? realtimeAtMsRaw
-          : null;
+      const realtimeAtMs = normalizedRealtimeLastAlarmByZoneMs.get(key) ?? null;
 
       const effective = computeEffectiveAlarmAtMs(csvAtMsValid, realtimeAtMs);
       if (effective === null) continue;
-      map.set(name, effective);
+      map.set(key, effective);
     }
     return map;
-  }, [realtimeLastAlarmByZoneMs, zoneLastAlarm]);
+  }, [normalizedRealtimeLastAlarmByZoneMs, normalizedZoneLastAlarm, polygonsByName]);
 
   const recentZones = useMemo(() => {
     const entries: Array<{ name: string; alarmAt: Date; alarmAtMs: number; minutesSince: number }> =
       [];
-    for (const [name, alarmAtMs] of effectiveZoneLastAlarmMs.entries()) {
-      if (!polygonsByName.has(name)) continue;
+    for (const [key, alarmAtMs] of effectiveZoneLastAlarmMs.entries()) {
+      const polygon = polygonsByName.get(key);
+      if (!polygon) continue;
       const alarmAt = new Date(alarmAtMs);
       entries.push({
-        name,
+        name: polygon.name,
         alarmAt,
         alarmAtMs,
         minutesSince: computeMinutesSince({ nowMs, alarmAtMs }),
@@ -396,9 +412,9 @@ function App() {
 
   const focusZoneByName = useCallback(
     (name: string) => {
-      const polygon = polygonsByName.get(name);
+      const polygon = polygonsByName.get(normalizeZoneKey(name));
       if (!polygon) return;
-      setSearchText(name);
+      setSearchText(polygon.name);
       setIsZonesOpen(false);
       const [minLat, minLng, maxLat, maxLng] = polygon.bounds;
       mapRef.current?.fitBounds(
@@ -409,7 +425,7 @@ function App() {
         { padding: [32, 32], maxZoom: 13 },
       );
       window.setTimeout(() => {
-        polygonLayersByNameRef.current.get(name)?.openPopup();
+        polygonLayersByNameRef.current.get(polygon.name)?.openPopup();
       }, 0);
       searchInputRef.current?.blur();
     },
@@ -607,10 +623,11 @@ function App() {
               url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
             />
             {polygons?.map((polygon) => {
-              const csvIso = zoneLastAlarm[polygon.name];
+              const zoneKey = normalizeZoneKey(polygon.name);
+              const csvIso = normalizedZoneLastAlarm.get(zoneKey);
               const csvAt = csvIso ? new Date(csvIso) : null;
               const csvAtMs = csvAt && Number.isFinite(csvAt.getTime()) ? csvAt.getTime() : null;
-              const realtimeAtMs = realtimeLastAlarmByZoneMs[polygon.name] ?? null;
+              const realtimeAtMs = normalizedRealtimeLastAlarmByZoneMs.get(zoneKey) ?? null;
               const effectiveAlarmAtMs = computeEffectiveAlarmAtMs(csvAtMs, realtimeAtMs);
               const isHistoryReplaced =
                 csvAtMs !== null &&
@@ -619,7 +636,7 @@ function App() {
               const isMatched = effectiveAlarmAtMs !== null;
               const isForcedActive =
                 realtimeAtMs !== null &&
-                realtimeForcedActiveZones.has(polygon.name) &&
+                realtimeForcedActiveZones.has(zoneKey) &&
                 !isHistoryReplaced;
               const fadeOpacity =
                 isMatched && effectiveAlarmAtMs !== null && !isForcedActive
@@ -643,11 +660,11 @@ function App() {
                     fillOpacity: fadeOpacity,
                   }
                 : {
-                    color: '#64748b',
-                    weight: 1,
-                    opacity: 0.35,
-                    fillColor: '#94a3b8',
-                    fillOpacity: 0.05,
+                    color: '#0f172a',
+                    weight: 1.25,
+                    opacity: 0.65,
+                    fillColor: '#64748b',
+                    fillOpacity: 0.08,
                   };
 
               return (
