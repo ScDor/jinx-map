@@ -22,3 +22,14 @@ npm run dev
 ## Config
 
 Copy `.env.example` to `.env.local` to override defaults (see `src/config.ts`).
+
+## CI/CD
+
+- CI runs on PRs and `main`: format check, lint, tests, and build.
+- PRs get a GitHub Pages preview at `https://<owner>.github.io/jinx-map/pr-preview/pr-<number>/` (same-repo PRs only).
+- `main` deploys to GitHub Pages at `https://<owner>.github.io/jinx-map/`.
+
+GitHub repo settings required:
+
+- Settings → Pages → Build and deployment → Source: **Deploy from a branch**
+- Branch: **gh-pages** / **/(root)**
