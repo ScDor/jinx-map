@@ -18,18 +18,19 @@ vi.mock('./data/alarms', () => ({
 vi.mock('react-leaflet', async () => {
   const React = await import('react')
   return {
-    MapContainer: ({
-      children,
-      whenCreated,
-    }: {
-      children?: React.ReactNode
-      whenCreated?: (map: unknown) => void
-    }) => {
+    MapContainer: React.forwardRef(({ children }: { children?: React.ReactNode }, ref) => {
       React.useEffect(() => {
-        whenCreated?.({ fitBounds: fitBoundsSpy })
-      }, [whenCreated])
+        const map = { fitBounds: fitBoundsSpy }
+        if (typeof ref === 'function') ref(map)
+        else if (ref && typeof ref === 'object' && 'current' in ref) ref.current = map
+
+        return () => {
+          if (typeof ref === 'function') ref(null)
+          else if (ref && typeof ref === 'object' && 'current' in ref) ref.current = null
+        }
+      }, [ref])
       return <div data-testid="leaflet-map">{children}</div>
-    },
+    }),
     TileLayer: () => null,
     Polygon: React.forwardRef(
       (
