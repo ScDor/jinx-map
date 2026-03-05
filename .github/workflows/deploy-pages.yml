@@ -29,6 +29,9 @@ jobs:
       - name: Install
         run: npm ci
 
+      - name: Ensure polygons.json exists
+        run: test -f public/polygons.json || npm run polygons:sync
+
       - name: Build
         run: npm run build -- --base=/${{ github.event.repository.name }}/
 
