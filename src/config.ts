@@ -13,4 +13,8 @@ function getEnvInt(key: string, fallback: number): number {
 export const appConfig = {
   appName: getEnvString('VITE_APP_NAME', "מפת ג׳ינקס"),
   apiPollSeconds: getEnvInt('VITE_API_POLL_SECONDS', 60),
+  alarmsCsvUrl: getEnvString(
+    'VITE_ALARMS_CSV_URL',
+    'https://raw.githubusercontent.com/yuval-harpaz/alarms/master/data/alarms.csv',
+  ),
 } as const

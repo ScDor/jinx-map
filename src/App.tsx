@@ -1,6 +1,7 @@
-import { useEffect, useId, useMemo, useState } from 'react'
+import { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react'
 import './App.css'
 import { appConfig } from './config'
+import { fetchAndComputeAlarms, loadStoredAlarmsState } from './data/alarms'
 import type { NormalizedPolygon, PolygonsLoadSource } from './data/polygons'
 import { loadPolygons } from './data/polygons'
 
@@ -43,10 +44,45 @@ function App() {
   const [polygons, setPolygons] = useState<NormalizedPolygon[] | null>(null)
   const [polygonsSource, setPolygonsSource] = useState<PolygonsLoadSource | null>(null)
   const [isPolygonsLoading, setIsPolygonsLoading] = useState(true)
+  const [isAlarmsLoading, setIsAlarmsLoading] = useState(false)
+  const isMountedRef = useRef(true)
+  const refreshInFlightRef = useRef<Promise<void> | null>(null)
+
+  const refreshAlarms = useCallback(async () => {
+    if (refreshInFlightRef.current) return refreshInFlightRef.current
+
+    setIsAlarmsLoading(true)
+    const promise = fetchAndComputeAlarms({ url: appConfig.alarmsCsvUrl })
+      .then((computed) => {
+        if (!isMountedRef.current) return
+        const computedAt = new Date(computed.computedAt)
+        if (Number.isFinite(computedAt.getTime())) setLastUpdatedAt(computedAt)
+        setErrorMessage(null)
+      })
+      .catch(() => {
+        if (!isMountedRef.current) return
+        setErrorMessage('שגיאה בעדכון האזעקות (ממשיכים עם הנתונים האחרונים).')
+      })
+      .finally(() => {
+        refreshInFlightRef.current = null
+        if (!isMountedRef.current) return
+        setIsAlarmsLoading(false)
+      })
+
+    refreshInFlightRef.current = promise
+    return promise
+  }, [])
 
   useEffect(() => {
     writeStoredInt(FADE_MINUTES_KEY, fadeMinutes)
   }, [fadeMinutes])
+
+  useEffect(() => {
+    isMountedRef.current = true
+    return () => {
+      isMountedRef.current = false
+    }
+  }, [])
 
   useEffect(() => {
     let cancelled = false
@@ -71,6 +107,23 @@ function App() {
       cancelled = true
     }
   }, [])
+
+  useEffect(() => {
+    const stored = loadStoredAlarmsState()
+    if (stored?.computedAt) {
+      const parsed = new Date(stored.computedAt)
+      if (Number.isFinite(parsed.getTime())) setLastUpdatedAt(parsed)
+    }
+
+    void refreshAlarms()
+    const interval = window.setInterval(() => {
+      void refreshAlarms()
+    }, appConfig.apiPollSeconds * 1000)
+
+    return () => {
+      window.clearInterval(interval)
+    }
+  }, [refreshAlarms])
 
   const lastUpdatedLabel = useMemo(() => formatLastUpdated(lastUpdatedAt), [lastUpdatedAt])
   const polygonsLabel = useMemo(() => {
@@ -105,7 +158,7 @@ function App() {
               className="actionButton"
               onClick={() => {
                 setErrorMessage(null)
-                setLastUpdatedAt(new Date())
+                void refreshAlarms()
               }}
             >
               רענון
@@ -124,6 +177,7 @@ function App() {
         <div className="status" aria-label="סטטוס">
           אב־טיפוס מקומי • {polygonsLabel} • ריענון כל {appConfig.apiPollSeconds} שנ׳ • עודכן לאחרונה:{' '}
           {lastUpdatedLabel}
+          {isAlarmsLoading ? ' • מעדכן…' : ''}
         </div>
       </header>
       <main className="stage" aria-label="מפה">

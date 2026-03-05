@@ -22,7 +22,7 @@ This phase bootstraps a Hebrew-only, client-only single-page app that runs local
   - In the app: load `public/polygons.json` if present, else fall back to fixtures automatically
   - Notes: added `npm run polygons:sync` + `scripts/sync-polygons.mjs`, committed `public/fixtures/*`, and wired `src/data/polygons.ts` into the UI status.
 
-- [ ] Implement alarms ingestion (best-effort tail fetch + CSV fallback):
+- [x] Implement alarms ingestion (best-effort tail fetch + CSV fallback):
   - Fetch `yuval-harpaz/alarms/data/alarms.csv` every 60 seconds and on manual “רענון”
   - Prefer HTTP `Range` tail fetch (newest alarms are at the end); fall back to full fetch if `Range` is unsupported
   - Parse CSV robustly (UTF-8; handle quoted fields/newlines) and compute per-zone “last alarm timestamp” for exact name matches only

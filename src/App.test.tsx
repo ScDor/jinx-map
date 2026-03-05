@@ -1,5 +1,17 @@
-import { fireEvent, render, screen } from '@testing-library/react'
+import { act, fireEvent, render, screen } from '@testing-library/react'
 import { afterEach, beforeEach, expect, test, vi } from 'vitest'
+
+vi.mock('./data/alarms', () => ({
+  fetchAndComputeAlarms: vi.fn(async () => ({
+    version: 1,
+    computedAt: new Date().toISOString(),
+    source: 'remote-range',
+    rowsParsed: 1,
+    zoneLastAlarm: {},
+  })),
+  loadStoredAlarmsState: vi.fn(() => null),
+}))
+
 import App from './App'
 
 const polygonsPayload = {
@@ -74,13 +86,24 @@ test('persists fade duration minutes in localStorage', () => {
   expect(localStorage.getItem('jinx.fadeMinutes')).toBe('30')
 })
 
-test('updates last-updated indicator on refresh', () => {
+test('updates last-updated indicator on refresh', async () => {
   vi.useFakeTimers()
-  vi.setSystemTime(new Date('2026-03-05T12:34:00.000Z'))
+  const flush = async () => {
+    await act(async () => {
+      for (let i = 0; i < 10; i += 1) {
+        await Promise.resolve()
+      }
+    })
+  }
 
+  vi.setSystemTime(new Date('2026-03-05T12:00:00.000Z'))
   render(<App />)
-  expect(screen.getByLabelText('סטטוס')).toHaveTextContent('עודכן לאחרונה: לא עודכן עדיין')
 
+  await flush()
+  expect(screen.getByLabelText('סטטוס')).toHaveTextContent('עודכן לאחרונה: 12:00')
+
+  vi.setSystemTime(new Date('2026-03-05T12:34:00.000Z'))
   fireEvent.click(screen.getByRole('button', { name: 'רענון' }))
+  await flush()
   expect(screen.getByLabelText('סטטוס')).toHaveTextContent('עודכן לאחרונה: 12:34')
 })
