@@ -15,11 +15,12 @@ This phase bootstraps a Hebrew-only, client-only single-page app that runs local
   - Add a small settings drawer/panel with a configurable “fade duration until opacity 0” (default: 60 minutes; persisted in `localStorage`)
   - Add lightweight “last updated” indicator and a non-intrusive error banner area (Hebrew copy)
 
-- [ ] Add polygons data pipeline with a reliable offline fallback:
+- [x] Add polygons data pipeline with a reliable offline fallback:
   - First, search for existing polygon assets or scripts; reuse patterns if present
   - Create a build/dev script that downloads `amitfin/oref_alert` polygon metadata (`area_to_polygon.json.zip`), extracts it, and writes a normalized `public/polygons.json` (only what the app needs: name + coordinates/bounds)
   - Add committed fallback fixtures in `public/fixtures/` (tiny subset of polygons + sample alarms) so the app still “works” if network fetch fails
   - In the app: load `public/polygons.json` if present, else fall back to fixtures automatically
+  - Notes: added `npm run polygons:sync` + `scripts/sync-polygons.mjs`, committed `public/fixtures/*`, and wired `src/data/polygons.ts` into the UI status.
 
 - [ ] Implement alarms ingestion (best-effort tail fetch + CSV fallback):
   - Fetch `yuval-harpaz/alarms/data/alarms.csv` every 60 seconds and on manual “רענון”

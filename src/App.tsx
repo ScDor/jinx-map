@@ -1,6 +1,8 @@
 import { useEffect, useId, useMemo, useState } from 'react'
 import './App.css'
 import { appConfig } from './config'
+import type { NormalizedPolygon, PolygonsLoadSource } from './data/polygons'
+import { loadPolygons } from './data/polygons'
 
 const FADE_MINUTES_KEY = 'jinx.fadeMinutes'
 const DEFAULT_FADE_MINUTES = 60
@@ -38,12 +40,45 @@ function App() {
   )
   const [lastUpdatedAt, setLastUpdatedAt] = useState<Date | null>(null)
   const [errorMessage, setErrorMessage] = useState<string | null>(null)
+  const [polygons, setPolygons] = useState<NormalizedPolygon[] | null>(null)
+  const [polygonsSource, setPolygonsSource] = useState<PolygonsLoadSource | null>(null)
+  const [isPolygonsLoading, setIsPolygonsLoading] = useState(true)
 
   useEffect(() => {
     writeStoredInt(FADE_MINUTES_KEY, fadeMinutes)
   }, [fadeMinutes])
 
+  useEffect(() => {
+    let cancelled = false
+    setIsPolygonsLoading(true)
+
+    loadPolygons()
+      .then(({ source, payload }) => {
+        if (cancelled) return
+        setPolygons(payload.polygons)
+        setPolygonsSource(source)
+      })
+      .catch(() => {
+        if (cancelled) return
+        setErrorMessage('שגיאה בטעינת הפוליגונים (נסו לרענן).')
+      })
+      .finally(() => {
+        if (cancelled) return
+        setIsPolygonsLoading(false)
+      })
+
+    return () => {
+      cancelled = true
+    }
+  }, [])
+
   const lastUpdatedLabel = useMemo(() => formatLastUpdated(lastUpdatedAt), [lastUpdatedAt])
+  const polygonsLabel = useMemo(() => {
+    if (isPolygonsLoading) return 'טוען פוליגונים…'
+    if (!polygons) return 'פוליגונים: לא נטענו'
+    const sourceLabel = polygonsSource === 'polygons.json' ? 'מלא' : 'דוגמה'
+    return `פוליגונים: ${polygons.length} (${sourceLabel})`
+  }, [isPolygonsLoading, polygons, polygonsSource])
 
   return (
     <div className="app">
@@ -87,7 +122,8 @@ function App() {
           </div>
         </div>
         <div className="status" aria-label="סטטוס">
-          אב־טיפוס מקומי • ריענון כל {appConfig.apiPollSeconds} שנ׳ • עודכן לאחרונה: {lastUpdatedLabel}
+          אב־טיפוס מקומי • {polygonsLabel} • ריענון כל {appConfig.apiPollSeconds} שנ׳ • עודכן לאחרונה:{' '}
+          {lastUpdatedLabel}
         </div>
       </header>
       <main className="stage" aria-label="מפה">
@@ -134,6 +170,7 @@ function App() {
         <div className="placeholder">
           כאן תופיע המפה עם הפוליגונים (שלב הבא).
           <div className="hint">משך דהייה נוכחי: {fadeMinutes} דקות.</div>
+          <div className="hint">{polygonsLabel}</div>
         </div>
       </main>
     </div>
