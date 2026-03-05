@@ -68,6 +68,27 @@
   overflow: hidden;
 }
 
+.mapWrap {
+  height: 100%;
+}
+
+.mapContainer {
+  height: 100%;
+  width: 100%;
+}
+
+.popupTitle {
+  font-weight: 800;
+  margin-bottom: 6px;
+}
+
+.popupBody {
+  font-size: 13px;
+  color: rgba(15, 23, 42, 0.85);
+  display: grid;
+  gap: 4px;
+}
+
 .errorBanner {
   position: absolute;
   top: 12px;

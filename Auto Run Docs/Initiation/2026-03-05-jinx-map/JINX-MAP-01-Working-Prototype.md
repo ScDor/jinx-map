@@ -28,7 +28,7 @@ This phase bootstraps a Hebrew-only, client-only single-page app that runs local
   - Parse CSV robustly (UTF-8; handle quoted fields/newlines) and compute per-zone “last alarm timestamp” for exact name matches only
   - Persist the most recent computed state in `localStorage` so the UI can render quickly on reload even before fetch completes
 
-- [ ] Render the map visualization (Leaflet) with correct fading behavior:
+- [x] Render the map visualization (Leaflet) with correct fading behavior:
   - Show Israel map with OSM tiles and polygons overlay (many polygons; keep performance in mind)
   - For each polygon with an exact CSV match, compute opacity: `1.0` immediately after alarm → linearly down to `0.0` at `fadeDuration`
   - Color: red for matched zones (with computed opacity); neutral/gray for unmatched zones (v1 exact matches only)
