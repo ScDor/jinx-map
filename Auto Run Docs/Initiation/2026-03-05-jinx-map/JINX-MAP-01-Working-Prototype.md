@@ -10,7 +10,7 @@ This phase bootstraps a Hebrew-only, client-only single-page app that runs local
   - Add ESLint/Prettier (or match existing if repo already has), strict TS, and a simple env-based config pattern
   - Ensure `npm run dev` starts a local server and renders a basic “Jinx Map” shell (Hebrew/RTL)
 
-- [ ] Implement the core UI shell (mobile-first, Hebrew, RTL):
+- [x] Implement the core UI shell (mobile-first, Hebrew, RTL):
   - Layout: full-screen map with a compact top bar (search input, refresh button, status text)
   - Add a small settings drawer/panel with a configurable “fade duration until opacity 0” (default: 60 minutes; persisted in `localStorage`)
   - Add lightweight “last updated” indicator and a non-intrusive error banner area (Hebrew copy)
