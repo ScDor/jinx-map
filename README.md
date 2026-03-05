@@ -16,6 +16,7 @@ npm run dev
 - `npm run preview` – preview build
 - `npm run lint` – ESLint
 - `npm run format` / `npm run format:check` – Prettier
+- `npm run polygons:sync` – download + normalize OREF polygons into `public/polygons.json`
 - `npm run test` – Vitest (CI mode)
 
 ## Config
