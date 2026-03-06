@@ -15,6 +15,18 @@ import type {
 } from 'leaflet';
 import { computeFadeOpacity, computeMinutesSince } from './map/fade';
 
+export function formatFadeMinutes(minutes: number): string {
+  if (minutes < 60) {
+    return `${minutes}דק`;
+  }
+  const hours = Math.floor(minutes / 60);
+  const mins = minutes % 60;
+  if (mins === 0) {
+    return hours === 1 ? `1שעה` : `${hours}שעות`;
+  }
+  return `${hours}שעה ${mins}דק`;
+}
+
 const FADE_MINUTES_KEY = 'jinx.fadeMinutes';
 const DEFAULT_FADE_MINUTES = 60;
 const BASEMAP_KEY = 'jinx.basemap';
