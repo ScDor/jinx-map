@@ -3,7 +3,6 @@ import './App.css';
 import { appConfig } from './config';
 import type { AlarmsComputedStateV1 } from './data/alarms';
 import { fetchAndComputeAlarms, loadStoredAlarmsState } from './data/alarms';
-import { startRealtimeWebSocket } from './data/realtime';
 import type { NormalizedPolygon, PolygonsLoadSource } from './data/polygons';
 import { loadPolygons } from './data/polygons';
 import { MapContainer, Polygon as LeafletPolygon, Popup, TileLayer, Tooltip } from 'react-leaflet';
@@ -222,15 +221,11 @@ function App() {
   const [isAlarmsLoading, setIsAlarmsLoading] = useState(false);
   const [alarmsState, setAlarmsState] = useState<AlarmsComputedStateV1 | null>(initialAlarms.state);
   const [nowMs, setNowMs] = useState(() => Date.now());
-  const [realtimeMode, setRealtimeMode] = useState<
-    'disabled' | 'connecting' | 'available' | 'unavailable'
-  >(() => (appConfig.realtimeEnabled ? 'connecting' : 'disabled'));
-  const [realtimeForcedActiveZones, setRealtimeForcedActiveZones] = useState<Set<string>>(
-    () => new Set(),
+  const [realtimeMode] = useState<'disabled' | 'connecting' | 'available' | 'unavailable'>(() =>
+    appConfig.realtimeEnabled ? 'connecting' : 'disabled',
   );
-  const [realtimeLastAlarmByZoneMs, setRealtimeLastAlarmByZoneMs] = useState<
-    Record<string, number>
-  >(() => ({}));
+  const [realtimeForcedActiveZones] = useState<Set<string>>(() => new Set());
+  const [realtimeLastAlarmByZoneMs] = useState<Record<string, number>>(() => ({}));
   const isMountedRef = useRef(true);
   const refreshInFlightRef = useRef<Promise<void> | null>(null);
   const mapRef = useRef<LeafletMap | null>(null);
@@ -332,51 +327,6 @@ function App() {
       window.clearTimeout(handle);
     };
   }, [searchText]);
-
-  useEffect(() => {
-    if (!appConfig.realtimeEnabled) return;
-
-    let lastSignature: string | null = null;
-
-    const handleRealtimeAlert = (payload: {
-      title: string | null;
-      areas: string[];
-      alertDateIso: string | null;
-    }) => {
-      if (!isMountedRef.current) return;
-
-      setRealtimeMode('available');
-
-      const areas = payload.areas;
-      const signature = `${payload.alertDateIso ?? ''}|${payload.title ?? ''}|${areas.join(',')}`;
-      if (signature === lastSignature) {
-        return;
-      }
-
-      lastSignature = signature;
-      const alarmAtMs = Date.now();
-
-      if (areas.length === 0) {
-        setRealtimeForcedActiveZones(new Set());
-        return;
-      }
-
-      setRealtimeLastAlarmByZoneMs((current) => {
-        const next = { ...current };
-        for (const name of areas) {
-          next[normalizeZoneKey(name)] = alarmAtMs;
-        }
-        return next;
-      });
-      setRealtimeForcedActiveZones(new Set(areas.map(normalizeZoneKey)));
-    };
-
-    const cleanup = startRealtimeWebSocket(handleRealtimeAlert);
-
-    return () => {
-      cleanup();
-    };
-  }, []);
 
   const lastUpdatedLabel = useMemo(() => formatLastUpdated(lastUpdatedAt), [lastUpdatedAt]);
   const polygonsLabel = useMemo(() => {
