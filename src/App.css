@@ -287,6 +287,48 @@
   border: 1px solid #000;
 }
 
+.sliderContainer {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.sliderContainer input[type='range'] {
+  flex: 1;
+  height: 6px;
+  -webkit-appearance: none;
+  appearance: none;
+  background: #e2e8f0;
+  border-radius: 3px;
+  outline: none;
+}
+
+.sliderContainer input[type='range']::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 20px;
+  height: 20px;
+  background: #dc2626;
+  border-radius: 50%;
+  cursor: pointer;
+}
+
+.sliderContainer input[type='range']::-moz-range-thumb {
+  width: 20px;
+  height: 20px;
+  background: #dc2626;
+  border-radius: 50%;
+  cursor: pointer;
+  border: none;
+}
+
+.sliderValue {
+  font-weight: 600;
+  color: #dc2626;
+  min-width: 70px;
+  text-align: left;
+}
+
 .leaflet-interactive:hover .polygon-tooltip .leaflet-tooltip-content {
   background: #fbbf24;
 }
