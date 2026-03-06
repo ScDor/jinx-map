@@ -38,7 +38,6 @@ function parseIso(value: unknown): string | null {
 import { appConfig } from '../config';
 
 const TZAVAADOM_WS_URL = 'wss://ws.tzevaadom.co.il/socket?platform=WEB';
-const ORIGIN_HEADER = 'https://www.tzevaadom.co.il';
 
 export type OrefRealtimeAlertsPayload = {
   data?: unknown;
@@ -77,9 +76,6 @@ const THREAT_TITLES: Record<number, string> = {
   7: 'חשש לאירוע כימי',
   8: 'התרעות פיקוד העורף',
 };
-
-const PRE_ALERT_CATEGORY = 14;
-const END_ALERT_CATEGORY = 13;
 
 const threatIdToCategory: Record<number, number> = {
   0: 1,
@@ -120,7 +116,7 @@ function parseIso(value: unknown): string | null {
 type RealtimeListener = (alerts: OrefRealtimeAlerts) => void;
 
 let ws: WebSocket | null = null;
-let wsListeners: Set<RealtimeListener> = new Set();
+const wsListeners: Set<RealtimeListener> = new Set();
 let wsConnected = false;
 let wsLastAlerts: OrefRealtimeAlerts = { title: null, areas: [], alertDateIso: null };
 let wsReconnectTimeout: number | null = null;

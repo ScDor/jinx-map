@@ -3,11 +3,7 @@ import './App.css';
 import { appConfig } from './config';
 import type { AlarmsComputedStateV1 } from './data/alarms';
 import { fetchAndComputeAlarms, loadStoredAlarmsState } from './data/alarms';
-import {
-  fetchOrefRealtimeAlerts,
-  startRealtimeWebSocket,
-  getRealtimeStatus,
-} from './data/realtime';
+import { startRealtimeWebSocket } from './data/realtime';
 import type { NormalizedPolygon, PolygonsLoadSource } from './data/polygons';
 import { loadPolygons } from './data/polygons';
 import { MapContainer, Polygon as LeafletPolygon, Popup, TileLayer, Tooltip } from 'react-leaflet';
@@ -70,8 +66,6 @@ const MAP_TICK_MS = 30_000;
 const SEARCH_DEBOUNCE_MS = 180;
 const SEARCH_RESULTS_LIMIT = 7;
 const RECENT_ZONES_LIMIT = 14;
-const REALTIME_BACKOFF_BASE_MS = 800;
-const REALTIME_BACKOFF_MAX_MS = 60_000;
 const REALTIME_HISTORY_REPLACED_SKEW_MS = 60_000;
 
 function normalizeZoneKey(raw: string): string {
@@ -379,17 +373,8 @@ function App() {
 
     const cleanup = startRealtimeWebSocket(handleRealtimeAlert);
 
-    const statusCheckInterval = window.setInterval(() => {
-      const status = getRealtimeStatus();
-      if (!status.connected && realtimeMode !== 'unavailable') {
-        setRealtimeMode('connecting');
-      }
-    }, 5000);
-
-    setRealtimeMode('connecting');
     return () => {
       cleanup();
-      window.clearInterval(statusCheckInterval);
     };
   }, []);
 
