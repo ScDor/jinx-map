@@ -165,7 +165,7 @@ export async function fetchAndComputeAlarms(
       } catch (e) {
         console.warn(`[alarms] Fetch failed (attempt ${i + 1}/${retries}):`, e);
         if (i < retries - 1) {
-          await new Promise((r) => setTimeout(r, 1000 * (i + 1)));
+          await new Promise((r) => setTimeout(r, 100));
         }
       }
     }
