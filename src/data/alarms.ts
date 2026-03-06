@@ -145,7 +145,8 @@ function dropLeadingPartialLine(csvText: string): string {
 
 async function fetchCsvText(pathOrUrl: string, init?: RequestInit): Promise<string> {
   let url = pathOrUrl;
-  if (appConfig.alarmsCsvProxyUrl) {
+  const isExternalUrl = pathOrUrl.startsWith('http://') || pathOrUrl.startsWith('https://');
+  if (isExternalUrl && appConfig.alarmsCsvProxyUrl) {
     url = `${appConfig.alarmsCsvProxyUrl}${encodeURIComponent(pathOrUrl)}`;
   }
   console.log('[alarms] Fetching:', url);
