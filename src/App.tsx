@@ -17,6 +17,39 @@ import { computeFadeOpacity, computeMinutesSince } from './map/fade';
 
 const FADE_MINUTES_KEY = 'jinx.fadeMinutes';
 const DEFAULT_FADE_MINUTES = 60;
+const BASEMAP_KEY = 'jinx.basemap';
+const DEFAULT_BASEMAP = 'cartodb-positron';
+
+interface BasemapOption {
+  id: string;
+  label: string;
+  url: string;
+  attribution: string;
+}
+
+const BASEMAP_OPTIONS: BasemapOption[] = [
+  {
+    id: 'cartodb-positron',
+    label: 'CartoDB Positron (בהיר)',
+    url: 'https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png',
+    attribution:
+      '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/attributions">CARTO</a>',
+  },
+  {
+    id: 'cartodb-dark',
+    label: 'CartoDB Dark (כהה)',
+    url: 'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png',
+    attribution:
+      '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/attributions">CARTO</a>',
+  },
+  {
+    id: 'openstreetmap',
+    label: 'OpenStreetMap',
+    url: 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',
+    attribution:
+      '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
+  },
+];
 const MAP_TICK_MS = 30_000;
 const SEARCH_DEBOUNCE_MS = 180;
 const SEARCH_RESULTS_LIMIT = 7;
@@ -57,6 +90,25 @@ function readStoredInt(key: string, fallback: number): number {
 function writeStoredInt(key: string, value: number): void {
   try {
     localStorage.setItem(key, String(value));
+  } catch {
+    // ignore
+  }
+}
+
+function readStoredBasemap(): string {
+  try {
+    const raw = localStorage.getItem(BASEMAP_KEY);
+    if (!raw) return DEFAULT_BASEMAP;
+    const valid = BASEMAP_OPTIONS.find((b) => b.id === raw);
+    return valid ? raw : DEFAULT_BASEMAP;
+  } catch {
+    return DEFAULT_BASEMAP;
+  }
+}
+
+function writeStoredBasemap(value: string): void {
+  try {
+    localStorage.setItem(BASEMAP_KEY, value);
   } catch {
     // ignore
   }
@@ -138,6 +190,7 @@ function readInitialAlarms(): { state: AlarmsComputedStateV1 | null; lastUpdated
 
 function App() {
   const fadeMinutesInputId = useId();
+  const basemapSelectId = useId();
   const [initialAlarms] = useState(() => readInitialAlarms());
   const [searchText, setSearchText] = useState('');
   const [debouncedSearchText, setDebouncedSearchText] = useState('');
@@ -147,6 +200,7 @@ function App() {
   const [fadeMinutes, setFadeMinutes] = useState(() =>
     readStoredInt(FADE_MINUTES_KEY, DEFAULT_FADE_MINUTES),
   );
+  const [basemapId, setBasemapId] = useState(() => readStoredBasemap());
   const [lastUpdatedAt, setLastUpdatedAt] = useState<Date | null>(initialAlarms.lastUpdatedAt);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [polygons, setPolygons] = useState<NormalizedPolygon[] | null>(null);
@@ -199,6 +253,10 @@ function App() {
   useEffect(() => {
     writeStoredInt(FADE_MINUTES_KEY, fadeMinutes);
   }, [fadeMinutes]);
+
+  useEffect(() => {
+    writeStoredBasemap(basemapId);
+  }, [basemapId]);
 
   useEffect(() => {
     isMountedRef.current = true;
@@ -347,6 +405,10 @@ function App() {
   }, [isPolygonsLoading, polygons, polygonsSource]);
 
   const polygonsBounds = useMemo(() => computePolygonsBounds(polygons), [polygons]);
+  const basemap = useMemo(
+    () => BASEMAP_OPTIONS.find((b) => b.id === basemapId) ?? BASEMAP_OPTIONS[0],
+    [basemapId],
+  );
   const zoneLastAlarm = useMemo(() => alarmsState?.zoneLastAlarm ?? {}, [alarmsState]);
   const realtimeLabel = useMemo(() => {
     if (!appConfig.realtimeEnabled) return 'ריל־טיים: כבוי';
@@ -594,6 +656,22 @@ function App() {
               }}
             />
             <div className="fieldHint">ברירת מחדל: {DEFAULT_FADE_MINUTES} דקות.</div>
+
+            <label className="fieldLabel" htmlFor={basemapSelectId}>
+              שכבת מפה
+            </label>
+            <select
+              id={basemapSelectId}
+              className="fieldSelect"
+              value={basemapId}
+              onChange={(event) => setBasemapId(event.target.value)}
+            >
+              {BASEMAP_OPTIONS.map((option) => (
+                <option key={option.id} value={option.id}>
+                  {option.label}
+                </option>
+              ))}
+            </select>
           </div>
         </aside>
 
@@ -642,10 +720,7 @@ function App() {
             scrollWheelZoom
             ref={mapRef}
           >
-            <TileLayer
-              attribution="&copy; OpenStreetMap contributors"
-              url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
-            />
+            <TileLayer attribution={basemap.attribution} url={basemap.url} />
             {polygons?.map((polygon) => {
               const zoneKey = normalizeZoneKey(polygon.name);
               const csvIso = normalizedZoneLastAlarm.get(zoneKey);
