@@ -25,3 +25,4 @@ Auto Run Docs/Working/
 *.njsproj
 *.sln
 *.sw?
+.worktrees
