@@ -613,9 +613,8 @@ function App() {
             center={[31.7, 35.0]}
             zoom={8}
             bounds={polygonsBounds ?? undefined}
-            boundsOptions={{ padding: [12, 12] }}
+            boundsOptions={{ padding: [12, 12], maxZoom: 10 }}
             scrollWheelZoom
-            preferCanvas
             ref={mapRef}
           >
             <TileLayer
