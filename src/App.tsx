@@ -6,7 +6,7 @@ import { fetchAndComputeAlarms, loadStoredAlarmsState } from './data/alarms';
 import { fetchOrefRealtimeAlerts } from './data/realtime';
 import type { NormalizedPolygon, PolygonsLoadSource } from './data/polygons';
 import { loadPolygons } from './data/polygons';
-import { MapContainer, Polygon as LeafletPolygon, Popup, TileLayer } from 'react-leaflet';
+import { MapContainer, Polygon as LeafletPolygon, Popup, TileLayer, Tooltip } from 'react-leaflet';
 import type {
   LatLngBoundsExpression,
   LatLngExpression,
@@ -75,6 +75,31 @@ function formatAlarmTimestamp(value: Date): string {
     hour: '2-digit',
     minute: '2-digit',
   });
+}
+
+function computePolygonSizeKm(rings: LatLngExpression[] | LatLngExpression[][]): number {
+  const coords: number[][] = [];
+  const flatten = (arr: LatLngExpression[] | LatLngExpression[][]): void => {
+    for (const item of arr) {
+      if (Array.isArray(item) && typeof item[0] === 'number') {
+        coords.push(item as number[]);
+      } else if (Array.isArray(item)) {
+        flatten(item as LatLngExpression[]);
+      }
+    }
+  };
+  flatten(rings);
+  if (coords.length < 3) return 0;
+  let minLat = Infinity, maxLat = -Infinity, minLng = Infinity, maxLng = -Infinity;
+  for (const c of coords) {
+    if (c[0] < minLat) minLat = c[0];
+    if (c[0] > maxLat) maxLat = c[0];
+    if (c[1] < minLng) minLng = c[1];
+    if (c[1] > maxLng) maxLng = c[1];
+  }
+  const latKm = (maxLat - minLat) * 111;
+  const lngKm = (maxLng - minLng) * 111 * Math.cos((minLat * Math.PI) / 180);
+  return Math.max(latKm, lngKm);
 }
 
 function computePolygonsBounds(
@@ -650,27 +675,33 @@ function App() {
               const alarmAt = effectiveAlarmAtMs !== null ? new Date(effectiveAlarmAtMs) : null;
 
               const positions: LatLngExpression[] | LatLngExpression[][] = polygon.rings;
+              const polygonSizeKm = computePolygonSizeKm(positions);
+              const showTooltip = polygonSizeKm >= 20;
               const pathOptions = isMatched
                 ? {
-                    color: '#dc2626',
-                    weight: 1.5,
-                    opacity: fadeOpacity,
+                    color: 'transparent',
+                    weight: 0,
                     fillColor: '#dc2626',
                     fillOpacity: fadeOpacity,
                   }
                 : {
-                    color: '#0f172a',
-                    weight: 1.25,
-                    opacity: 0.65,
+                    color: 'transparent',
+                    weight: 0,
                     fillColor: '#64748b',
                     fillOpacity: 0.08,
                   };
+              const tooltipContent = minutesSince !== null
+                ? showTooltip && polygonSizeKm >= 30
+                  ? `${minutesSince}\n${polygon.name}`
+                  : String(minutesSince)
+                : '';
 
               return (
                 <LeafletPolygon
                   key={polygon.name}
                   positions={positions}
                   pathOptions={pathOptions}
+                  interactive={isMatched && minutesSince !== null && showTooltip}
                   ref={(layer) => {
                     if (layer) {
                       polygonLayersByNameRef.current.set(polygon.name, layer);
@@ -679,6 +710,15 @@ function App() {
                     }
                   }}
                 >
+                  {isMatched && minutesSince !== null && showTooltip ? (
+                    <Tooltip
+                      direction="center"
+                      permanent
+                      className="polygon-tooltip"
+                    >
+                      {tooltipContent}
+                    </Tooltip>
+                  ) : null}
                   <Popup>
                     <div className="popupTitle">{polygon.name}</div>
                     {isMatched && alarmAt && minutesSince !== null ? (

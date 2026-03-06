@@ -58,6 +58,9 @@ vi.mock('react-leaflet', async () => {
     Popup: ({ children }: { children?: React.ReactNode }) => (
       <div data-testid="leaflet-popup">{children}</div>
     ),
+    Tooltip: ({ children }: { children?: React.ReactNode }) => (
+      <div data-testid="leaflet-tooltip">{children}</div>
+    ),
   };
 });
 
