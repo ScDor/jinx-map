@@ -141,7 +141,7 @@
   position: absolute;
   top: 0;
   right: 0;
-  z-index: 20;
+  z-index: 1000;
   height: 100%;
   width: min(360px, 92vw);
   background: var(--surface);
@@ -160,7 +160,7 @@
   position: absolute;
   top: 0;
   left: 0;
-  z-index: 19;
+  z-index: 999;
   height: 100%;
   width: min(360px, 92vw);
   background: var(--surface);
