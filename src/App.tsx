@@ -654,22 +654,24 @@ function App() {
 
           <div className="settingsBody">
             <label className="fieldLabel" htmlFor={fadeMinutesInputId}>
-              משך דהייה עד שקיפות 0 (בדקות)
+              משך דהייה עד שקיפות 0
             </label>
-            <input
-              id={fadeMinutesInputId}
-              className="fieldInput"
-              type="number"
-              min={1}
-              max={720}
-              step={1}
-              value={fadeMinutes}
-              onChange={(event) => {
-                const parsed = Number.parseInt(event.target.value, 10);
-                if (!Number.isFinite(parsed)) return;
-                setFadeMinutes(Math.max(1, Math.min(720, parsed)));
-              }}
-            />
+            <div className="sliderContainer">
+              <input
+                id={fadeMinutesInputId}
+                type="range"
+                min={10}
+                max={1440}
+                step={5}
+                value={fadeMinutes}
+                onChange={(event) => {
+                  const parsed = Number.parseInt(event.target.value, 10);
+                  if (!Number.isFinite(parsed)) return;
+                  setFadeMinutes(Math.max(10, Math.min(1440, parsed)));
+                }}
+              />
+              <span className="sliderValue">{formatFadeMinutes(fadeMinutes)}</span>
+            </div>
             <div className="fieldHint">ברירת מחדל: {DEFAULT_FADE_MINUTES} דקות.</div>
 
             <label className="fieldLabel" htmlFor={basemapSelectId}>
