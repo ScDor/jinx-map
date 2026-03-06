@@ -25,11 +25,13 @@ export const appConfig = {
     'VITE_ALARMS_CSV_URL',
     'https://raw.githubusercontent.com/yuval-harpaz/alarms/master/data/alarms.csv',
   ),
+  alarmsCsvProxyUrl: getEnvString('VITE_ALARMS_CSV_PROXY_URL', 'https://corsproxy.io/?'),
   realtimeEnabled: getEnvBool('VITE_REALTIME_ENABLED', true),
   realtimeAlertsUrl: getEnvString(
     'VITE_REALTIME_ALERTS_URL',
     'https://www.oref.org.il/warningMessages/alert/Alerts.json',
   ),
+  realtimeAlertsProxyUrl: getEnvString('VITE_REALTIME_ALERTS_PROXY_URL', 'https://corsproxy.io/?'),
   realtimePollSeconds: getEnvInt('VITE_REALTIME_POLL_SECONDS', 4),
   realtimeMaxFailures: getEnvInt('VITE_REALTIME_MAX_FAILURES', 4),
 } as const;

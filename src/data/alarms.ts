@@ -135,6 +135,8 @@ export function parseAlarmsCsv(
   };
 }
 
+import { appConfig } from '../config';
+
 function dropLeadingPartialLine(csvText: string): string {
   const firstNewline = csvText.indexOf('\n');
   if (firstNewline === -1) return csvText;
@@ -142,7 +144,12 @@ function dropLeadingPartialLine(csvText: string): string {
 }
 
 async function fetchCsvText(pathOrUrl: string, init?: RequestInit): Promise<string> {
-  const response = await fetch(pathOrUrl, { cache: 'no-store', ...init });
+  let url = pathOrUrl;
+  if (appConfig.alarmsCsvProxyUrl) {
+    url = `${appConfig.alarmsCsvProxyUrl}${encodeURIComponent(pathOrUrl)}`;
+  }
+  console.log('[alarms] Fetching:', url);
+  const response = await fetch(url, { cache: 'no-store', ...init });
   if (!response.ok) {
     throw new Error(`HTTP ${response.status} for ${pathOrUrl}`);
   }
