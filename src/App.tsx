@@ -66,24 +66,12 @@ const MAP_TICK_MS = 30_000;
 const SEARCH_DEBOUNCE_MS = 180;
 const SEARCH_RESULTS_LIMIT = 7;
 const RECENT_ZONES_LIMIT = 14;
-const REALTIME_HISTORY_REPLACED_SKEW_MS = 60_000;
 
 function normalizeZoneKey(raw: string): string {
   return raw
     .replace(/^\uFEFF/, '')
     .trim()
     .normalize('NFKC');
-}
-
-function computeEffectiveAlarmAtMs(
-  csvAtMs: number | null,
-  realtimeAtMs: number | null,
-): number | null {
-  if (csvAtMs === null && realtimeAtMs === null) return null;
-  if (csvAtMs === null) return realtimeAtMs;
-  if (realtimeAtMs === null) return csvAtMs;
-  if (csvAtMs >= realtimeAtMs - REALTIME_HISTORY_REPLACED_SKEW_MS) return csvAtMs;
-  return Math.max(csvAtMs, realtimeAtMs);
 }
 
 function readStoredInt(key: string, fallback: number): number {
@@ -222,11 +210,6 @@ function App() {
   const [isAlarmsLoading, setIsAlarmsLoading] = useState(false);
   const [alarmsState, setAlarmsState] = useState<AlarmsComputedStateV1 | null>(initialAlarms.state);
   const [nowMs, setNowMs] = useState(() => Date.now());
-  const [realtimeMode] = useState<'disabled' | 'connecting' | 'available' | 'unavailable'>(() =>
-    appConfig.realtimeEnabled ? 'connecting' : 'disabled',
-  );
-  const [realtimeForcedActiveZones] = useState<Set<string>>(() => new Set());
-  const [realtimeLastAlarmByZoneMs] = useState<Record<string, number>>(() => ({}));
   const isMountedRef = useRef(true);
   const refreshInFlightRef = useRef<Promise<void> | null>(null);
   const mapRef = useRef<LeafletMap | null>(null);
@@ -343,13 +326,6 @@ function App() {
     [basemapId],
   );
   const zoneLastAlarm = useMemo(() => alarmsState?.zoneLastAlarm ?? {}, [alarmsState]);
-  const realtimeLabel = useMemo(() => {
-    if (!appConfig.realtimeEnabled) return 'ריל־טיים: כבוי';
-    if (realtimeMode === 'connecting') return 'מנסה ריל־טיים…';
-    if (realtimeMode === 'unavailable') return 'ריל־טיים לא זמין, משתמשים ב־CSV';
-    if (realtimeForcedActiveZones.size > 0) return 'ריל־טיים: פעיל';
-    return 'ריל־טיים: זמין';
-  }, [realtimeForcedActiveZones.size, realtimeMode]);
   const polygonsByName = useMemo(() => {
     const map = new Map<string, NormalizedPolygon>();
     for (const polygon of polygons ?? []) {
@@ -388,29 +364,15 @@ function App() {
     return map;
   }, [zoneLastAlarm]);
 
-  const normalizedRealtimeLastAlarmByZoneMs = useMemo(() => {
-    const map = new Map<string, number>();
-    for (const [name, alarmAtMs] of Object.entries(realtimeLastAlarmByZoneMs)) {
-      if (typeof alarmAtMs !== 'number' || !Number.isFinite(alarmAtMs)) continue;
-      map.set(normalizeZoneKey(name), alarmAtMs);
-    }
-    return map;
-  }, [realtimeLastAlarmByZoneMs]);
-
   const effectiveZoneLastAlarmMs = useMemo(() => {
     const map = new Map<string, number>();
-    for (const [key] of polygonsByName.entries()) {
-      const csvIso = normalizedZoneLastAlarm.get(key);
-      const csvAtMs = csvIso ? new Date(csvIso).getTime() : null;
-      const csvAtMsValid = csvAtMs !== null && Number.isFinite(csvAtMs) ? csvAtMs : null;
-      const realtimeAtMs = normalizedRealtimeLastAlarmByZoneMs.get(key) ?? null;
-
-      const effective = computeEffectiveAlarmAtMs(csvAtMsValid, realtimeAtMs);
-      if (effective === null) continue;
-      map.set(key, effective);
+    for (const [key, iso] of normalizedZoneLastAlarm.entries()) {
+      const ms = new Date(iso).getTime();
+      if (!Number.isFinite(ms)) continue;
+      map.set(key, ms);
     }
     return map;
-  }, [normalizedRealtimeLastAlarmByZoneMs, normalizedZoneLastAlarm, polygonsByName]);
+  }, [normalizedZoneLastAlarm]);
 
   const recentZones = useMemo(() => {
     const entries: Array<{ name: string; alarmAt: Date; alarmAtMs: number; minutesSince: number }> =
@@ -547,7 +509,7 @@ function App() {
         </div>
         <div className="status" aria-label="סטטוס">
           אב־טיפוס מקומי • {polygonsLabel} • ריענון כל {appConfig.apiPollSeconds} שנ׳ • עודכן
-          לאחרונה: {lastUpdatedLabel} • {realtimeLabel}
+          לאחרונה: {lastUpdatedLabel}
           {isAlarmsLoading ? ' • מעדכן…' : ''}
         </div>
       </header>
@@ -662,37 +624,23 @@ function App() {
                 const csvIso = normalizedZoneLastAlarm.get(zoneKey);
                 const csvAt = csvIso ? new Date(csvIso) : null;
                 const csvAtMs = csvAt && Number.isFinite(csvAt.getTime()) ? csvAt.getTime() : null;
-                const realtimeAtMs = normalizedRealtimeLastAlarmByZoneMs.get(zoneKey) ?? null;
-                const effectiveAlarmAtMs = computeEffectiveAlarmAtMs(csvAtMs, realtimeAtMs);
-                return effectiveAlarmAtMs !== null;
+                return csvAtMs !== null;
               })
               .map((polygon) => {
                 const zoneKey = normalizeZoneKey(polygon.name);
                 const csvIso = normalizedZoneLastAlarm.get(zoneKey);
                 const csvAt = csvIso ? new Date(csvIso) : null;
                 const csvAtMs = csvAt && Number.isFinite(csvAt.getTime()) ? csvAt.getTime() : null;
-                const realtimeAtMs = normalizedRealtimeLastAlarmByZoneMs.get(zoneKey) ?? null;
-                const effectiveAlarmAtMs = computeEffectiveAlarmAtMs(csvAtMs, realtimeAtMs);
-                const isHistoryReplaced =
-                  csvAtMs !== null &&
-                  realtimeAtMs !== null &&
-                  csvAtMs >= realtimeAtMs - REALTIME_HISTORY_REPLACED_SKEW_MS;
-                const isMatched = effectiveAlarmAtMs !== null;
-                const isForcedActive =
-                  realtimeAtMs !== null &&
-                  realtimeForcedActiveZones.has(zoneKey) &&
-                  !isHistoryReplaced;
+                const isMatched = csvAtMs !== null;
                 const fadeOpacity =
-                  isMatched && effectiveAlarmAtMs !== null && !isForcedActive
-                    ? computeFadeOpacity({ nowMs, alarmAtMs: effectiveAlarmAtMs, fadeMinutes })
-                    : isForcedActive
-                      ? 1
-                      : 0;
+                  isMatched && csvAtMs !== null
+                    ? computeFadeOpacity({ nowMs, alarmAtMs: csvAtMs, fadeMinutes })
+                    : 0;
                 const minutesSince =
-                  isMatched && effectiveAlarmAtMs !== null
-                    ? computeMinutesSince({ nowMs, alarmAtMs: effectiveAlarmAtMs })
+                  isMatched && csvAtMs !== null
+                    ? computeMinutesSince({ nowMs, alarmAtMs: csvAtMs })
                     : null;
-                const alarmAt = effectiveAlarmAtMs !== null ? new Date(effectiveAlarmAtMs) : null;
+                const alarmAt = csvAtMs !== null ? new Date(csvAtMs) : null;
 
                 const positions: LatLngExpression[] | LatLngExpression[][] = polygon.rings;
                 const polygonSizeKm = computePolygonSizeKm(positions);
@@ -742,11 +690,6 @@ function App() {
                         <div className="popupBody">
                           <div>דקות מאז אזעקה: {minutesSince}</div>
                           <div>זמן אזעקה: {formatAlarmTimestamp(alarmAt)}</div>
-                          {isForcedActive ? (
-                            <div>סטטוס: פעיל (ריל־טיים; ממתינים ל־CSV)</div>
-                          ) : csvAtMs === null && realtimeAtMs !== null ? (
-                            <div>מקור: ריל־טיים (טרם הופיע ב־CSV)</div>
-                          ) : null}
                         </div>
                       ) : (
                         <div className="popupBody">אין התאמה מדויקת ב־CSV.</div>
