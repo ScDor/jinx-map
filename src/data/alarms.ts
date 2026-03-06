@@ -153,27 +153,16 @@ async function fetchCsvText(pathOrUrl: string, init?: RequestInit): Promise<stri
 export async function fetchAndComputeAlarms(
   options: FetchAlarmsCsvOptions,
 ): Promise<AlarmsComputedStateV1> {
+  const tailBytes = options.tailBytes ?? 512_000;
   const fixturesPath =
     options.fixturesPath ?? `${import.meta.env.BASE_URL}fixtures/alarms.fixture.csv`;
 
   const computedAt = new Date().toISOString();
 
-  const fetchWithRetry = async (url: string, retries = 3): Promise<string> => {
-    for (let i = 0; i < retries; i++) {
-      try {
-        return await fetchCsvText(url);
-      } catch (e) {
-        console.warn(`[alarms] Fetch failed (attempt ${i + 1}/${retries}):`, e);
-        if (i < retries - 1) {
-          await new Promise((r) => setTimeout(r, 100));
-        }
-      }
-    }
-    throw new Error(`Failed after ${retries} attempts`);
-  };
-
   try {
-    const rangeText = await fetchWithRetry(options.url, 2);
+    const rangeText = await fetchCsvText(options.url, {
+      headers: { Range: `bytes=-${tailBytes}` },
+    });
     const parsed = parseAlarmsCsv(dropLeadingPartialLine(rangeText));
     const state: AlarmsComputedStateV1 = {
       version: 1,
@@ -188,7 +177,7 @@ export async function fetchAndComputeAlarms(
   }
 
   try {
-    const fullText = await fetchWithRetry(options.url, 2);
+    const fullText = await fetchCsvText(options.url);
     const parsed = parseAlarmsCsv(fullText);
     const state: AlarmsComputedStateV1 = {
       version: 1,
