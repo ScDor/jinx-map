@@ -14,6 +14,7 @@ import type {
 } from 'leaflet';
 import { computeFadeOpacity, computeMinutesSince } from './map/fade';
 
+// eslint-disable-next-line react-refresh/only-export-components
 export function formatFadeMinutes(minutes: number): string {
   if (minutes < 60) {
     return `${minutes}דק`;
