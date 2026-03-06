@@ -150,7 +150,7 @@ test('persists fade duration minutes in localStorage', () => {
 
   fireEvent.click(screen.getByRole('button', { name: 'הגדרות' }));
 
-  const minutesInput = screen.getByLabelText('משך דהייה עד שקיפות 0 (בדקות)') as HTMLInputElement;
+  const minutesInput = screen.getByLabelText('משך דהייה עד שקיפות 0') as HTMLInputElement;
   expect(minutesInput.value).toBe('45');
 
   fireEvent.change(minutesInput, { target: { value: '30' } });
