@@ -12,13 +12,19 @@ export type OrefRealtimeAlerts = {
 };
 
 function parseAreas(value: unknown): string[] {
-  if (!Array.isArray(value)) return [];
-  const out: string[] = [];
-  for (const item of value) {
-    const name = String(item ?? '').trim();
-    if (name) out.push(name);
+  if (Array.isArray(value)) {
+    const out: string[] = [];
+    for (const item of value) {
+      const name = String(item ?? '').trim();
+      if (name) out.push(name);
+    }
+    return out;
   }
-  return out;
+  if (typeof value === 'string') {
+    const trimmed = value.trim();
+    return trimmed ? [trimmed] : [];
+  }
+  return [];
 }
 
 function parseIso(value: unknown): string | null {
