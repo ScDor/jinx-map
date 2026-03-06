@@ -142,7 +142,10 @@ function computePolygonSizeKm(rings: LatLngExpression[] | LatLngExpression[][]):
   };
   flatten(rings);
   if (coords.length < 3) return 0;
-  let minLat = Infinity, maxLat = -Infinity, minLng = Infinity, maxLng = -Infinity;
+  let minLat = Infinity,
+    maxLat = -Infinity,
+    minLng = Infinity,
+    maxLng = -Infinity;
   for (const c of coords) {
     if (c[0] < minLat) minLat = c[0];
     if (c[0] > maxLat) maxLat = c[0];
@@ -721,98 +724,105 @@ function App() {
             ref={mapRef}
           >
             <TileLayer attribution={basemap.attribution} url={basemap.url} />
-            {polygons?.map((polygon) => {
-              const zoneKey = normalizeZoneKey(polygon.name);
-              const csvIso = normalizedZoneLastAlarm.get(zoneKey);
-              const csvAt = csvIso ? new Date(csvIso) : null;
-              const csvAtMs = csvAt && Number.isFinite(csvAt.getTime()) ? csvAt.getTime() : null;
-              const realtimeAtMs = normalizedRealtimeLastAlarmByZoneMs.get(zoneKey) ?? null;
-              const effectiveAlarmAtMs = computeEffectiveAlarmAtMs(csvAtMs, realtimeAtMs);
-              const isHistoryReplaced =
-                csvAtMs !== null &&
-                realtimeAtMs !== null &&
-                csvAtMs >= realtimeAtMs - REALTIME_HISTORY_REPLACED_SKEW_MS;
-              const isMatched = effectiveAlarmAtMs !== null;
-              const isForcedActive =
-                realtimeAtMs !== null &&
-                realtimeForcedActiveZones.has(zoneKey) &&
-                !isHistoryReplaced;
-              const fadeOpacity =
-                isMatched && effectiveAlarmAtMs !== null && !isForcedActive
-                  ? computeFadeOpacity({ nowMs, alarmAtMs: effectiveAlarmAtMs, fadeMinutes })
-                  : isForcedActive
-                    ? 1
-                    : 0;
-              const minutesSince =
-                isMatched && effectiveAlarmAtMs !== null
-                  ? computeMinutesSince({ nowMs, alarmAtMs: effectiveAlarmAtMs })
-                  : null;
-              const alarmAt = effectiveAlarmAtMs !== null ? new Date(effectiveAlarmAtMs) : null;
+            {polygons
+              ?.filter((polygon) => {
+                const zoneKey = normalizeZoneKey(polygon.name);
+                const csvIso = normalizedZoneLastAlarm.get(zoneKey);
+                const csvAt = csvIso ? new Date(csvIso) : null;
+                const csvAtMs = csvAt && Number.isFinite(csvAt.getTime()) ? csvAt.getTime() : null;
+                const realtimeAtMs = normalizedRealtimeLastAlarmByZoneMs.get(zoneKey) ?? null;
+                const effectiveAlarmAtMs = computeEffectiveAlarmAtMs(csvAtMs, realtimeAtMs);
+                return effectiveAlarmAtMs !== null;
+              })
+              .map((polygon) => {
+                const zoneKey = normalizeZoneKey(polygon.name);
+                const csvIso = normalizedZoneLastAlarm.get(zoneKey);
+                const csvAt = csvIso ? new Date(csvIso) : null;
+                const csvAtMs = csvAt && Number.isFinite(csvAt.getTime()) ? csvAt.getTime() : null;
+                const realtimeAtMs = normalizedRealtimeLastAlarmByZoneMs.get(zoneKey) ?? null;
+                const effectiveAlarmAtMs = computeEffectiveAlarmAtMs(csvAtMs, realtimeAtMs);
+                const isHistoryReplaced =
+                  csvAtMs !== null &&
+                  realtimeAtMs !== null &&
+                  csvAtMs >= realtimeAtMs - REALTIME_HISTORY_REPLACED_SKEW_MS;
+                const isMatched = effectiveAlarmAtMs !== null;
+                const isForcedActive =
+                  realtimeAtMs !== null &&
+                  realtimeForcedActiveZones.has(zoneKey) &&
+                  !isHistoryReplaced;
+                const fadeOpacity =
+                  isMatched && effectiveAlarmAtMs !== null && !isForcedActive
+                    ? computeFadeOpacity({ nowMs, alarmAtMs: effectiveAlarmAtMs, fadeMinutes })
+                    : isForcedActive
+                      ? 1
+                      : 0;
+                const minutesSince =
+                  isMatched && effectiveAlarmAtMs !== null
+                    ? computeMinutesSince({ nowMs, alarmAtMs: effectiveAlarmAtMs })
+                    : null;
+                const alarmAt = effectiveAlarmAtMs !== null ? new Date(effectiveAlarmAtMs) : null;
 
-              const positions: LatLngExpression[] | LatLngExpression[][] = polygon.rings;
-              const polygonSizeKm = computePolygonSizeKm(positions);
-              const showTooltip = polygonSizeKm >= 20;
-              const pathOptions = isMatched
-                ? {
-                    color: 'transparent',
-                    weight: 0,
-                    fillColor: '#dc2626',
-                    fillOpacity: fadeOpacity,
-                  }
-                : {
-                    color: 'transparent',
-                    weight: 0,
-                    fillColor: '#64748b',
-                    fillOpacity: 0.08,
-                  };
-              const tooltipContent = minutesSince !== null
-                ? showTooltip && polygonSizeKm >= 30
-                  ? `${minutesSince}\n${polygon.name}`
-                  : String(minutesSince)
-                : '';
-
-              return (
-                <LeafletPolygon
-                  key={polygon.name}
-                  positions={positions}
-                  pathOptions={pathOptions}
-                  interactive={isMatched && minutesSince !== null && showTooltip}
-                  ref={(layer) => {
-                    if (layer) {
-                      polygonLayersByNameRef.current.set(polygon.name, layer);
-                    } else {
-                      polygonLayersByNameRef.current.delete(polygon.name);
+                const positions: LatLngExpression[] | LatLngExpression[][] = polygon.rings;
+                const polygonSizeKm = computePolygonSizeKm(positions);
+                const showTooltip = polygonSizeKm >= 20;
+                const pathOptions = isMatched
+                  ? {
+                      color: 'transparent',
+                      weight: 0,
+                      fillColor: '#dc2626',
+                      fillOpacity: fadeOpacity,
                     }
-                  }}
-                >
-                  {isMatched && minutesSince !== null && showTooltip ? (
-                    <Tooltip
-                      direction="center"
-                      permanent
-                      className="polygon-tooltip"
-                    >
-                      {tooltipContent}
-                    </Tooltip>
-                  ) : null}
-                  <Popup>
-                    <div className="popupTitle">{polygon.name}</div>
-                    {isMatched && alarmAt && minutesSince !== null ? (
-                      <div className="popupBody">
-                        <div>דקות מאז אזעקה: {minutesSince}</div>
-                        <div>זמן אזעקה: {formatAlarmTimestamp(alarmAt)}</div>
-                        {isForcedActive ? (
-                          <div>סטטוס: פעיל (ריל־טיים; ממתינים ל־CSV)</div>
-                        ) : csvAtMs === null && realtimeAtMs !== null ? (
-                          <div>מקור: ריל־טיים (טרם הופיע ב־CSV)</div>
-                        ) : null}
-                      </div>
-                    ) : (
-                      <div className="popupBody">אין התאמה מדויקת ב־CSV.</div>
-                    )}
-                  </Popup>
-                </LeafletPolygon>
-              );
-            })}
+                  : {
+                      color: 'transparent',
+                      weight: 0,
+                      fillColor: '#64748b',
+                      fillOpacity: 0.08,
+                    };
+                const tooltipContent =
+                  minutesSince !== null
+                    ? showTooltip && polygonSizeKm >= 30
+                      ? `${minutesSince}\n${polygon.name}`
+                      : String(minutesSince)
+                    : '';
+
+                return (
+                  <LeafletPolygon
+                    key={polygon.name}
+                    positions={positions}
+                    pathOptions={pathOptions}
+                    interactive={isMatched && minutesSince !== null && showTooltip}
+                    ref={(layer) => {
+                      if (layer) {
+                        polygonLayersByNameRef.current.set(polygon.name, layer);
+                      } else {
+                        polygonLayersByNameRef.current.delete(polygon.name);
+                      }
+                    }}
+                  >
+                    {isMatched && minutesSince !== null && showTooltip ? (
+                      <Tooltip direction="center" permanent className="polygon-tooltip">
+                        {tooltipContent}
+                      </Tooltip>
+                    ) : null}
+                    <Popup>
+                      <div className="popupTitle">{polygon.name}</div>
+                      {isMatched && alarmAt && minutesSince !== null ? (
+                        <div className="popupBody">
+                          <div>דקות מאז אזעקה: {minutesSince}</div>
+                          <div>זמן אזעקה: {formatAlarmTimestamp(alarmAt)}</div>
+                          {isForcedActive ? (
+                            <div>סטטוס: פעיל (ריל־טיים; ממתינים ל־CSV)</div>
+                          ) : csvAtMs === null && realtimeAtMs !== null ? (
+                            <div>מקור: ריל־טיים (טרם הופיע ב־CSV)</div>
+                          ) : null}
+                        </div>
+                      ) : (
+                        <div className="popupBody">אין התאמה מדויקת ב־CSV.</div>
+                      )}
+                    </Popup>
+                  </LeafletPolygon>
+                );
+              })}
           </MapContainer>
         </div>
       </main>
