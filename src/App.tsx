@@ -3,7 +3,11 @@ import './App.css';
 import { appConfig } from './config';
 import type { AlarmsComputedStateV1 } from './data/alarms';
 import { fetchAndComputeAlarms, loadStoredAlarmsState } from './data/alarms';
-import { fetchOrefRealtimeAlerts } from './data/realtime';
+import {
+  fetchOrefRealtimeAlerts,
+  startRealtimeWebSocket,
+  getRealtimeStatus,
+} from './data/realtime';
 import type { NormalizedPolygon, PolygonsLoadSource } from './data/polygons';
 import { loadPolygons } from './data/polygons';
 import { MapContainer, Polygon as LeafletPolygon, Popup, TileLayer, Tooltip } from 'react-leaflet';
@@ -338,76 +342,54 @@ function App() {
   useEffect(() => {
     if (!appConfig.realtimeEnabled) return;
 
-    let cancelled = false;
-    let timeout: number | null = null;
-    let consecutiveFailures = 0;
     let lastSignature: string | null = null;
 
-    const schedule = (delayMs: number) => {
-      if (cancelled) return;
-      timeout = window.setTimeout(() => {
-        void poll();
-      }, delayMs);
-    };
+    const handleRealtimeAlert = (payload: {
+      title: string | null;
+      areas: string[];
+      alertDateIso: string | null;
+    }) => {
+      if (!isMountedRef.current) return;
 
-    const computeBackoffMs = () => {
-      const exponent = Math.max(0, consecutiveFailures - 1);
-      const raw = REALTIME_BACKOFF_BASE_MS * 2 ** exponent;
-      return Math.min(REALTIME_BACKOFF_MAX_MS, raw);
-    };
+      setRealtimeMode('available');
 
-    const poll = async () => {
-      if (cancelled) return;
-      setRealtimeMode((mode) => (mode === 'available' ? 'available' : 'connecting'));
-
-      try {
-        const payload = await fetchOrefRealtimeAlerts(appConfig.realtimeAlertsUrl);
-        if (cancelled || !isMountedRef.current) return;
-
-        consecutiveFailures = 0;
-        setRealtimeMode('available');
-
-        const areas = payload.areas;
-        const signature = `${payload.alertDateIso ?? ''}|${payload.title ?? ''}|${areas.join(',')}`;
-        if (signature === lastSignature) {
-          schedule(appConfig.realtimePollSeconds * 1000);
-          return;
-        }
-
-        lastSignature = signature;
-        const alarmAtMs = Date.now();
-
-        if (areas.length === 0) {
-          setRealtimeForcedActiveZones(new Set());
-          schedule(appConfig.realtimePollSeconds * 1000);
-          return;
-        }
-
-        setRealtimeLastAlarmByZoneMs((current) => {
-          const next = { ...current };
-          for (const name of areas) {
-            next[normalizeZoneKey(name)] = alarmAtMs;
-          }
-          return next;
-        });
-        setRealtimeForcedActiveZones(new Set(areas.map(normalizeZoneKey)));
-        schedule(appConfig.realtimePollSeconds * 1000);
-      } catch {
-        if (cancelled || !isMountedRef.current) return;
-        consecutiveFailures += 1;
-        if (consecutiveFailures >= appConfig.realtimeMaxFailures) {
-          setRealtimeMode('unavailable');
-          setRealtimeForcedActiveZones(new Set());
-          return;
-        }
-        schedule(computeBackoffMs());
+      const areas = payload.areas;
+      const signature = `${payload.alertDateIso ?? ''}|${payload.title ?? ''}|${areas.join(',')}`;
+      if (signature === lastSignature) {
+        return;
       }
+
+      lastSignature = signature;
+      const alarmAtMs = Date.now();
+
+      if (areas.length === 0) {
+        setRealtimeForcedActiveZones(new Set());
+        return;
+      }
+
+      setRealtimeLastAlarmByZoneMs((current) => {
+        const next = { ...current };
+        for (const name of areas) {
+          next[normalizeZoneKey(name)] = alarmAtMs;
+        }
+        return next;
+      });
+      setRealtimeForcedActiveZones(new Set(areas.map(normalizeZoneKey)));
     };
 
-    schedule(0);
+    const cleanup = startRealtimeWebSocket(handleRealtimeAlert);
+
+    const statusCheckInterval = window.setInterval(() => {
+      const status = getRealtimeStatus();
+      if (!status.connected && realtimeMode !== 'unavailable') {
+        setRealtimeMode('connecting');
+      }
+    }, 5000);
+
+    setRealtimeMode('connecting');
     return () => {
-      cancelled = true;
-      if (timeout !== null) window.clearTimeout(timeout);
+      cleanup();
+      window.clearInterval(statusCheckInterval);
     };
   }, []);
 
