@@ -26,7 +26,7 @@ export const appConfig = {
     'https://raw.githubusercontent.com/yuval-harpaz/alarms/master/data/alarms.csv',
   ),
   alarmsCsvProxyUrl: getEnvString('VITE_ALARMS_CSV_PROXY_URL', 'https://corsproxy.io/?'),
-  realtimeEnabled: getEnvBool('VITE_REALTIME_ENABLED', true),
+  realtimeEnabled: getEnvBool('VITE_REALTIME_ENABLED', false),
   realtimeAlertsUrl: getEnvString(
     'VITE_REALTIME_ALERTS_URL',
     'https://www.oref.org.il/warningMessages/alert/Alerts.json',
