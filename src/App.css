@@ -332,6 +332,15 @@
   text-align: left;
 }
 
+.area-label-marker {
+  background: transparent !important;
+  border: 0 !important;
+}
+
+.area-label-marker .area-label-inner {
+  pointer-events: none;
+}
+
 .leaflet-interactive:hover .polygon-tooltip .leaflet-tooltip-content {
   background: #fbbf24;
 }
