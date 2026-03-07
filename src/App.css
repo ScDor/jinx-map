@@ -66,6 +66,8 @@
   box-shadow: 0 14px 36px rgba(15, 23, 42, 0.12);
   overflow: hidden;
   display: grid;
+  max-height: min(42vh, 320px);
+  overflow-y: auto;
 }
 
 .searchResultButton {
@@ -340,6 +342,18 @@
   color: #dc2626;
   min-width: 70px;
   text-align: left;
+}
+
+@media (max-width: 768px) {
+  .topbarActions {
+    width: 100%;
+    flex-wrap: wrap;
+  }
+
+  .searchWrap {
+    flex: 1 1 100%;
+    min-width: 0;
+  }
 }
 
 .area-label-marker {
