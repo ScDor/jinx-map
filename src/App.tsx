@@ -747,9 +747,29 @@ function App() {
           </div>
         </div>
         <div className="status" aria-label="סטטוס">
-          אב־טיפוס מקומי • {polygonsLabel} • ריענון כל {appConfig.apiPollSeconds} שנ׳ • עודכן
-          לאחרונה: {lastUpdatedLabel}
+          {polygonsLabel} • ריענון כל {appConfig.apiPollSeconds} שנ׳ • עודכן לאחרונה:{' '}
+          {lastUpdatedLabel}
           {isAlarmsLoading ? ' • מעדכן…' : ''}
+        </div>
+        <div className="dataAttribution" aria-label="ייחוס נתונים">
+          נתונים: פוליגונים מ־
+          <a
+            href="https://github.com/amitfin/oref_alert"
+            target="_blank"
+            rel="noopener noreferrer"
+          >
+            {' '}
+            amitfin/oref_alert
+          </a>
+          {' '}• אזעקות מ־
+          <a
+            href="https://github.com/yuval-harpaz/alarms"
+            target="_blank"
+            rel="noopener noreferrer"
+          >
+            {' '}
+            yuval-harpaz/alarms
+          </a>
         </div>
       </header>
       <main className="stage" aria-label="מפה">

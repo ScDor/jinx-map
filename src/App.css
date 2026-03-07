@@ -96,6 +96,16 @@
   color: var(--muted);
 }
 
+.dataAttribution {
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.dataAttribution a {
+  color: inherit;
+  text-decoration: underline;
+}
+
 .stage {
   position: relative;
   overflow: hidden;

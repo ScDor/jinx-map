@@ -2,6 +2,11 @@
 
 Hebrew-only, client-only, mobile-first single-page app prototype for visualizing OREF polygons and “time since last alarm”.
 
+## Data attribution
+
+- Polygon data is sourced from [`amitfin/oref_alert`](https://github.com/amitfin/oref_alert).
+- Alarm feed data is sourced from [`yuval-harpaz/alarms`](https://github.com/yuval-harpaz/alarms).
+
 ## Local dev
 
 ```bash
