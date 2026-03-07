@@ -1,6 +1,6 @@
 # Phase 05: GitHub Pages Deployment + CI
 
-This phase makes the app easy to ship and maintain: it adds a repeatable build, automated deployment to GitHub Pages, and lightweight CI checks so changes don’t quietly break the map, data ingestion, or realtime fallback behavior.
+This phase makes the app easy to ship and maintain: it adds a repeatable build, automated deployment to GitHub Pages, and lightweight CI checks so changes don’t quietly break the map or data ingestion.
 
 ## Tasks
 
@@ -18,7 +18,7 @@ This phase makes the app easy to ship and maintain: it adds a repeatable build, 
   - Confirm the output directory and routing (single-page app) works when hosted
 
 - [ ] Add a minimal “smoke test” runbook embedded in the repo (only if there is already a docs area):
-  - Steps: open hosted URL, verify polygons load, search works, refresh works, status shows CSV fallback if realtime blocked
+  - Steps: open hosted URL, verify polygons load, search works, refresh works
   - Keep it short and purely actionable (no long narrative)
 
 - [ ] Run CI locally (where possible) and fix issues introduced by deployment wiring:

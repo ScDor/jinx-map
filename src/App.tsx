@@ -5,7 +5,14 @@ import type { AlarmsComputedStateV1 } from './data/alarms';
 import { fetchAndComputeAlarms, loadStoredAlarmsState } from './data/alarms';
 import type { NormalizedPolygon, PolygonsLoadSource } from './data/polygons';
 import { loadPolygons } from './data/polygons';
-import { MapContainer, Polygon as LeafletPolygon, Popup, TileLayer, Tooltip } from 'react-leaflet';
+import {
+  MapContainer,
+  Polygon as LeafletPolygon,
+  Popup,
+  TileLayer,
+  Tooltip,
+  useMapEvents,
+} from 'react-leaflet';
 import type {
   LatLngBoundsExpression,
   LatLngExpression,
@@ -75,6 +82,22 @@ const MAP_TICK_MS = 30_000;
 const SEARCH_DEBOUNCE_MS = 180;
 const SEARCH_RESULTS_LIMIT = 7;
 const RECENT_ZONES_LIMIT = 14;
+type LabelPolicy = { enabled: boolean; maxLabels: number; marginPx: number };
+
+function computeLabelPolicy(zoom: number): LabelPolicy {
+  if (zoom <= 6) return { enabled: false, maxLabels: 0, marginPx: 14 };
+  if (zoom <= 7) return { enabled: true, maxLabels: 20, marginPx: 12 };
+  if (zoom <= 8) return { enabled: true, maxLabels: 40, marginPx: 10 };
+  if (zoom <= 9) return { enabled: true, maxLabels: 80, marginPx: 8 };
+  return { enabled: true, maxLabels: Number.POSITIVE_INFINITY, marginPx: 6 };
+}
+
+function setsEqual<T>(a: Set<T>, b: Set<T>): boolean {
+  if (a === b) return true;
+  if (a.size !== b.size) return false;
+  for (const item of a) if (!b.has(item)) return false;
+  return true;
+}
 
 function normalizeZoneKey(raw: string): string {
   return raw
@@ -136,34 +159,6 @@ function formatAlarmTimestamp(value: Date): string {
   });
 }
 
-function computePolygonSizeKm(rings: LatLngExpression[] | LatLngExpression[][]): number {
-  const coords: number[][] = [];
-  const flatten = (arr: LatLngExpression[] | LatLngExpression[][]): void => {
-    for (const item of arr) {
-      if (Array.isArray(item) && typeof item[0] === 'number') {
-        coords.push(item as number[]);
-      } else if (Array.isArray(item)) {
-        flatten(item as LatLngExpression[]);
-      }
-    }
-  };
-  flatten(rings);
-  if (coords.length < 3) return 0;
-  let minLat = Infinity,
-    maxLat = -Infinity,
-    minLng = Infinity,
-    maxLng = -Infinity;
-  for (const c of coords) {
-    if (c[0] < minLat) minLat = c[0];
-    if (c[0] > maxLat) maxLat = c[0];
-    if (c[1] < minLng) minLng = c[1];
-    if (c[1] > maxLng) maxLng = c[1];
-  }
-  const latKm = (maxLat - minLat) * 111;
-  const lngKm = (maxLng - minLng) * 111 * Math.cos((minLat * Math.PI) / 180);
-  return Math.max(latKm, lngKm);
-}
-
 function computePolygonsBounds(
   polygons: NormalizedPolygon[] | null,
 ): LatLngBoundsExpression | null {
@@ -219,6 +214,8 @@ function App() {
   const [isAlarmsLoading, setIsAlarmsLoading] = useState(false);
   const [alarmsState, setAlarmsState] = useState<AlarmsComputedStateV1 | null>(initialAlarms.state);
   const [nowMs, setNowMs] = useState(() => Date.now());
+  const [mapZoom, setMapZoom] = useState(8);
+  const [hiddenLabelZoneKeys, setHiddenLabelZoneKeys] = useState<Set<string>>(() => new Set());
   const isMountedRef = useRef(true);
   const refreshInFlightRef = useRef<Promise<void> | null>(null);
   const mapRef = useRef<LeafletMap | null>(null);
@@ -383,6 +380,97 @@ function App() {
     return map;
   }, [normalizedZoneLastAlarm]);
 
+  const labelCandidates = useMemo(() => {
+    const candidates: Array<{
+      zoneKey: string;
+      polygonName: string;
+      label: string;
+      fallbackCenter: [number, number];
+      minutesSince: number;
+    }> = [];
+
+    for (const [zoneKey, alarmAtMs] of effectiveZoneLastAlarmMs.entries()) {
+      const polygon = polygonsByName.get(zoneKey);
+      if (!polygon) continue;
+      const minutesSince = computeMinutesSince({ nowMs, alarmAtMs });
+      candidates.push({
+        zoneKey,
+        polygonName: polygon.name,
+        label: formatMinutesSince(minutesSince),
+        fallbackCenter: [
+          (polygon.bounds[0] + polygon.bounds[2]) / 2,
+          (polygon.bounds[1] + polygon.bounds[3]) / 2,
+        ],
+        minutesSince,
+      });
+    }
+
+    candidates.sort((a, b) => a.minutesSince - b.minutesSince);
+    return candidates;
+  }, [effectiveZoneLastAlarmMs, nowMs, polygonsByName]);
+
+  const declutterLabels = useCallback((map: LeafletMap) => {
+    const policy = computeLabelPolicy(map.getZoom());
+    if (!policy.enabled || policy.maxLabels <= 0) {
+      const allHidden = new Set(labelCandidates.map((candidate) => candidate.zoneKey));
+      setHiddenLabelZoneKeys((current) => (setsEqual(current, allHidden) ? current : allHidden));
+      return;
+    }
+
+    const visibleBoxes: Array<{ left: number; right: number; top: number; bottom: number }> = [];
+    const hidden = new Set<string>();
+    let visibleCount = 0;
+
+    for (const candidate of labelCandidates) {
+      if (visibleCount >= policy.maxLabels) {
+        hidden.add(candidate.zoneKey);
+        continue;
+      }
+
+      const layer = polygonLayersByNameRef.current.get(candidate.polygonName);
+      const center: LatLngExpression = layer?.getBounds().getCenter() ?? candidate.fallbackCenter;
+      const point = map.latLngToContainerPoint(center);
+      const width = Math.max(28, candidate.label.length * 8 + 12);
+      const height = 22;
+      const left = point.x - width / 2;
+      const right = left + width;
+      const top = point.y - height / 2;
+      const bottom = top + height;
+
+      let overlaps = false;
+      for (const box of visibleBoxes) {
+        if (
+          left < box.right + policy.marginPx &&
+          right > box.left - policy.marginPx &&
+          top < box.bottom + policy.marginPx &&
+          bottom > box.top - policy.marginPx
+        ) {
+          overlaps = true;
+          break;
+        }
+      }
+
+      if (overlaps) {
+        hidden.add(candidate.zoneKey);
+        continue;
+      }
+
+      visibleBoxes.push({ left, right, top, bottom });
+      visibleCount += 1;
+    }
+
+    setHiddenLabelZoneKeys((current) => (setsEqual(current, hidden) ? current : hidden));
+  }, [labelCandidates]);
+
+  const handleMapViewChanged = useCallback(
+    (map: LeafletMap) => {
+      mapRef.current = map;
+      setMapZoom(map.getZoom());
+      declutterLabels(map);
+    },
+    [declutterLabels],
+  );
+
   const recentZones = useMemo(() => {
     const entries: Array<{ name: string; alarmAt: Date; alarmAtMs: number; minutesSince: number }> =
       [];
@@ -422,6 +510,28 @@ function App() {
     },
     [polygonsByName],
   );
+
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map) return;
+    declutterLabels(map);
+  }, [declutterLabels]);
+
+  function MapEventBridge({ onViewChange }: { onViewChange: (map: LeafletMap) => void }) {
+    const map = useMapEvents({
+      zoomend: () => onViewChange(map),
+      moveend: () => onViewChange(map),
+      resize: () => onViewChange(map),
+    });
+
+    useEffect(() => {
+      onViewChange(map);
+    }, [map, onViewChange]);
+
+    return null;
+  }
+
+  const labelPolicy = useMemo(() => computeLabelPolicy(mapZoom), [mapZoom]);
 
   return (
     <div className="app">
@@ -624,8 +734,8 @@ function App() {
             bounds={polygonsBounds ?? undefined}
             boundsOptions={{ padding: [12, 12], maxZoom: 10 }}
             scrollWheelZoom
-            ref={mapRef}
           >
+            <MapEventBridge onViewChange={handleMapViewChanged} />
             <TileLayer attribution={basemap.attribution} url={basemap.url} />
             {polygons
               ?.filter((polygon) => {
@@ -652,8 +762,11 @@ function App() {
                 const alarmAt = csvAtMs !== null ? new Date(csvAtMs) : null;
 
                 const positions: LatLngExpression[] | LatLngExpression[][] = polygon.rings;
-                const polygonSizeKm = computePolygonSizeKm(positions);
-                const showLabel = polygonSizeKm >= 8;
+                const showLabel =
+                  labelPolicy.enabled &&
+                  isMatched &&
+                  minutesSince !== null &&
+                  !hiddenLabelZoneKeys.has(zoneKey);
                 const pathOptions = isMatched
                   ? {
                       color: 'transparent',

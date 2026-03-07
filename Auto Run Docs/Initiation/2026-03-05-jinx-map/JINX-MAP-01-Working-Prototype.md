@@ -1,6 +1,6 @@
 # Phase 01: Working Prototype (Map + CSV)
 
-This phase bootstraps a Hebrew-only, client-only single-page app that runs locally and shows a working Israel map with OREF polygons, coloring zones by “time since last alarm” (CSV fallback). It prioritizes a tangible prototype: open the dev server and immediately see polygons, search, refresh, and fading visualization—while keeping realtime as best-effort and non-blocking.
+This phase bootstraps a Hebrew-only, client-only single-page app that runs locally and shows a working Israel map with OREF polygons, coloring zones by “time since last alarm” (CSV). It prioritizes a tangible prototype: open the dev server and immediately see polygons, search, refresh, and fading visualization.
 
 ## Tasks
 
@@ -39,13 +39,6 @@ This phase bootstraps a Hebrew-only, client-only single-page app that runs local
   - Selecting a result fits bounds/zooms to polygon and opens its popup
   - Add an optional compact list panel (collapsible on mobile) showing “most recently alarmed” zones for quick navigation
   - Notes: wired Leaflet `fitBounds` + `openPopup`, added “אזורים” panel; covered by `src/App.test.tsx`
-
-- [x] Add best-effort realtime attempt without risking the prototype:
-  - Read `amitfin/oref_alert` implementation to identify any browser-callable realtime endpoints (WebSocket or HTTP) it uses
-  - Implement a guarded realtime connector that tries once on load and then periodically (with backoff)
-  - If realtime works: treat incoming alert areas as “last alarm = now” and mark as active (full opacity) until replaced by history updates; if “all clear” is detected, keep the fade logic but stop forcing “active”
-  - If realtime fails (CORS/geo/blocked): automatically disable realtime and continue using CSV-only, with clear status text (“ריל־טיים לא זמין, משתמשים ב־CSV”)
-  - Notes: added best-effort poller for Oref `warningMessages/alert/Alerts.json` with exponential backoff + auto-disable; forces active opacity for realtime areas until CSV catches up; covered by new `src/App.test.tsx` cases
 
 - [x] Manual verification checklist (run locally) and fix any issues:
   - `npm install`, `npm run dev` → map renders with polygons even offline (fixtures)
