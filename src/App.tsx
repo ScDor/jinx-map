@@ -39,10 +39,7 @@ export function formatFadeMinutes(minutes: number): string {
 function formatMinutesSince(minutes: number): string {
   const hours = Math.floor(minutes / 60);
   const mins = Math.round(minutes % 60);
-  if (hours === 0) {
-    return `${mins}:00`;
-  }
-  return `${hours}:${mins.toString().padStart(2, '0')}`;
+  return `${hours.toString().padStart(2, '0')}:${mins.toString().padStart(2, '0')}`;
 }
 
 const FADE_MINUTES_KEY = 'jinx.fadeMinutes';
