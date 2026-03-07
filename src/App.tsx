@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react';
+import { Fragment, useCallback, useEffect, useId, useMemo, useRef, useState } from 'react';
 import './App.css';
 import { appConfig } from './config';
 import type { AlarmsComputedStateV1 } from './data/alarms';
@@ -7,18 +7,20 @@ import type { NormalizedPolygon, PolygonsLoadSource } from './data/polygons';
 import { loadPolygons } from './data/polygons';
 import {
   MapContainer,
+  Marker,
   Polygon as LeafletPolygon,
   Popup,
   TileLayer,
-  Tooltip,
   useMapEvents,
 } from 'react-leaflet';
 import type {
+  DivIcon,
   LatLngBoundsExpression,
   LatLngExpression,
   Map as LeafletMap,
   Polygon as LeafletPolygonLayer,
 } from 'leaflet';
+import { divIcon } from 'leaflet';
 import { computeFadeOpacity, computeMinutesSince } from './map/fade';
 
 // eslint-disable-next-line react-refresh/only-export-components
@@ -97,6 +99,98 @@ function setsEqual<T>(a: Set<T>, b: Set<T>): boolean {
   if (a.size !== b.size) return false;
   for (const item of a) if (!b.has(item)) return false;
   return true;
+}
+
+function isPointOnSegment(
+  pointLat: number,
+  pointLng: number,
+  aLat: number,
+  aLng: number,
+  bLat: number,
+  bLng: number,
+): boolean {
+  const cross = (pointLng - aLng) * (bLat - aLat) - (pointLat - aLat) * (bLng - aLng);
+  if (Math.abs(cross) > 1e-10) return false;
+  const dot = (pointLng - aLng) * (bLng - aLng) + (pointLat - aLat) * (bLat - aLat);
+  if (dot < 0) return false;
+  const squaredLen = (bLng - aLng) ** 2 + (bLat - aLat) ** 2;
+  return dot <= squaredLen;
+}
+
+function isPointInRing(point: [number, number], ring: [number, number][]): boolean {
+  if (ring.length < 3) return false;
+  const [pointLat, pointLng] = point;
+  let inside = false;
+
+  for (let current = 0, previous = ring.length - 1; current < ring.length; previous = current++) {
+    const [latA, lngA] = ring[current];
+    const [latB, lngB] = ring[previous];
+
+    if (isPointOnSegment(pointLat, pointLng, latA, lngA, latB, lngB)) return true;
+
+    const intersects =
+      (latA > pointLat) !== (latB > pointLat) &&
+      pointLng < ((lngB - lngA) * (pointLat - latA)) / (latB - latA) + lngA;
+
+    if (intersects) inside = !inside;
+  }
+
+  return inside;
+}
+
+function isPointInsidePolygon(point: [number, number], rings: [number, number][][]): boolean {
+  if (rings.length === 0) return false;
+  if (!isPointInRing(point, rings[0])) return false;
+  for (let index = 1; index < rings.length; index += 1) {
+    if (isPointInRing(point, rings[index])) return false;
+  }
+  return true;
+}
+
+function findPointInsidePolygon(polygon: NormalizedPolygon): [number, number] {
+  const [minLat, minLng, maxLat, maxLng] = polygon.bounds;
+  const center: [number, number] = [(minLat + maxLat) / 2, (minLng + maxLng) / 2];
+  const rings = polygon.rings as [number, number][][];
+
+  if (isPointInsidePolygon(center, rings)) return center;
+
+  const outerRing = rings[0];
+  if (outerRing.length > 0) {
+    let sumLat = 0;
+    let sumLng = 0;
+    for (const [lat, lng] of outerRing) {
+      sumLat += lat;
+      sumLng += lng;
+    }
+    const avgPoint: [number, number] = [sumLat / outerRing.length, sumLng / outerRing.length];
+    if (isPointInsidePolygon(avgPoint, rings)) return avgPoint;
+  }
+
+  const gridSteps = [5, 7, 9, 11];
+  for (const steps of gridSteps) {
+    let bestPoint: [number, number] | null = null;
+    let bestDistance = Number.POSITIVE_INFINITY;
+
+    for (let row = 0; row <= steps; row += 1) {
+      const tLat = row / steps;
+      const lat = minLat + (maxLat - minLat) * tLat;
+      for (let col = 0; col <= steps; col += 1) {
+        const tLng = col / steps;
+        const lng = minLng + (maxLng - minLng) * tLng;
+        const candidate: [number, number] = [lat, lng];
+        if (!isPointInsidePolygon(candidate, rings)) continue;
+        const distance = (lat - center[0]) ** 2 + (lng - center[1]) ** 2;
+        if (distance < bestDistance) {
+          bestDistance = distance;
+          bestPoint = candidate;
+        }
+      }
+    }
+
+    if (bestPoint) return bestPoint;
+  }
+
+  return outerRing[0] ?? center;
 }
 
 function normalizeZoneKey(raw: string): string {
@@ -220,6 +314,7 @@ function App() {
   const refreshInFlightRef = useRef<Promise<void> | null>(null);
   const mapRef = useRef<LeafletMap | null>(null);
   const polygonLayersByNameRef = useRef<Map<string, LeafletPolygonLayer>>(new Map());
+  const labelIconCacheRef = useRef<Map<string, DivIcon>>(new Map());
   const searchInputRef = useRef<HTMLInputElement | null>(null);
 
   const refreshAlarms = useCallback(async () => {
@@ -339,6 +434,13 @@ function App() {
     }
     return map;
   }, [polygons]);
+  const labelAnchorByZoneKey = useMemo(() => {
+    const map = new Map<string, [number, number]>();
+    for (const polygon of polygons ?? []) {
+      map.set(normalizeZoneKey(polygon.name), findPointInsidePolygon(polygon));
+    }
+    return map;
+  }, [polygons]);
 
   const polygonSearchIndex = useMemo(() => {
     return (polygons ?? []).map((polygon) => ({
@@ -383,9 +485,8 @@ function App() {
   const labelCandidates = useMemo(() => {
     const candidates: Array<{
       zoneKey: string;
-      polygonName: string;
       label: string;
-      fallbackCenter: [number, number];
+      anchor: [number, number];
       minutesSince: number;
     }> = [];
 
@@ -395,19 +496,15 @@ function App() {
       const minutesSince = computeMinutesSince({ nowMs, alarmAtMs });
       candidates.push({
         zoneKey,
-        polygonName: polygon.name,
         label: formatMinutesSince(minutesSince),
-        fallbackCenter: [
-          (polygon.bounds[0] + polygon.bounds[2]) / 2,
-          (polygon.bounds[1] + polygon.bounds[3]) / 2,
-        ],
+        anchor: labelAnchorByZoneKey.get(zoneKey) ?? findPointInsidePolygon(polygon),
         minutesSince,
       });
     }
 
     candidates.sort((a, b) => a.minutesSince - b.minutesSince);
     return candidates;
-  }, [effectiveZoneLastAlarmMs, nowMs, polygonsByName]);
+  }, [effectiveZoneLastAlarmMs, labelAnchorByZoneKey, nowMs, polygonsByName]);
 
   const declutterLabels = useCallback((map: LeafletMap) => {
     const policy = computeLabelPolicy(map.getZoom());
@@ -427,9 +524,7 @@ function App() {
         continue;
       }
 
-      const layer = polygonLayersByNameRef.current.get(candidate.polygonName);
-      const center: LatLngExpression = layer?.getBounds().getCenter() ?? candidate.fallbackCenter;
-      const point = map.latLngToContainerPoint(center);
+      const point = map.latLngToContainerPoint(candidate.anchor);
       const width = Math.max(28, candidate.label.length * 8 + 12);
       const height = 22;
       const left = point.x - width / 2;
@@ -470,6 +565,17 @@ function App() {
     },
     [declutterLabels],
   );
+  const getLabelIcon = useCallback((labelText: string): DivIcon => {
+    const cached = labelIconCacheRef.current.get(labelText);
+    if (cached) return cached;
+
+    const icon = divIcon({
+      className: 'area-label-marker',
+      html: `<span class="area-label-inner">${labelText}</span>`,
+    });
+    labelIconCacheRef.current.set(labelText, icon);
+    return icon;
+  }, []);
 
   const recentZones = useMemo(() => {
     const entries: Array<{ name: string; alarmAt: Date; alarmAtMs: number; minutesSince: number }> =
@@ -783,37 +889,43 @@ function App() {
                 const tooltipContent =
                   minutesSince !== null ? formatMinutesSince(minutesSince) : '';
 
+                const labelAnchor = labelAnchorByZoneKey.get(zoneKey) ?? null;
+
                 return (
-                  <LeafletPolygon
-                    key={polygon.name}
-                    positions={positions}
-                    pathOptions={pathOptions}
-                    interactive={isMatched && minutesSince !== null}
-                    ref={(layer) => {
-                      if (layer) {
-                        polygonLayersByNameRef.current.set(polygon.name, layer);
-                      } else {
-                        polygonLayersByNameRef.current.delete(polygon.name);
-                      }
-                    }}
-                  >
-                    {isMatched && minutesSince !== null && showLabel ? (
-                      <Tooltip direction="center" permanent className="polygon-tooltip">
-                        {tooltipContent}
-                      </Tooltip>
+                  <Fragment key={polygon.name}>
+                    <LeafletPolygon
+                      positions={positions}
+                      pathOptions={pathOptions}
+                      interactive={isMatched && minutesSince !== null}
+                      ref={(layer) => {
+                        if (layer) {
+                          polygonLayersByNameRef.current.set(polygon.name, layer);
+                        } else {
+                          polygonLayersByNameRef.current.delete(polygon.name);
+                        }
+                      }}
+                    >
+                      <Popup>
+                        <div className="popupTitle">{polygon.name}</div>
+                        {isMatched && alarmAt && minutesSince !== null ? (
+                          <div className="popupBody">
+                            <div>דקות מאז אזעקה: {minutesSince}</div>
+                            <div>זמן אזעקה: {formatAlarmTimestamp(alarmAt)}</div>
+                          </div>
+                        ) : (
+                          <div className="popupBody">אין התאמה מדויקת ב־CSV.</div>
+                        )}
+                      </Popup>
+                    </LeafletPolygon>
+                    {showLabel && labelAnchor ? (
+                      <Marker
+                        position={labelAnchor}
+                        icon={getLabelIcon(tooltipContent)}
+                        interactive={false}
+                        keyboard={false}
+                      />
                     ) : null}
-                    <Popup>
-                      <div className="popupTitle">{polygon.name}</div>
-                      {isMatched && alarmAt && minutesSince !== null ? (
-                        <div className="popupBody">
-                          <div>דקות מאז אזעקה: {minutesSince}</div>
-                          <div>זמן אזעקה: {formatAlarmTimestamp(alarmAt)}</div>
-                        </div>
-                      ) : (
-                        <div className="popupBody">אין התאמה מדויקת ב־CSV.</div>
-                      )}
-                    </Popup>
-                  </LeafletPolygon>
+                  </Fragment>
                 );
               })}
           </MapContainer>
