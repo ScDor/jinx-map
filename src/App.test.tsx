@@ -72,7 +72,7 @@ vi.mock('react-leaflet', async () => {
   };
 });
 
-import App from './App';
+import App, { formatMinutesSince } from './App';
 import { fetchAndComputeAlarms } from './data/alarms';
 
 const polygonsPayload = {
@@ -241,4 +241,11 @@ test('recent zones panel lists alarms and allows focusing', async () => {
   expect(fitBoundsSpy).toHaveBeenCalledTimes(1);
   vi.runOnlyPendingTimers();
   expect(openPopupSpy).toHaveBeenCalledTimes(1);
+});
+
+test('formats elapsed time as compact m/h/d labels', () => {
+  expect(formatMinutesSince(30)).toBe('30m');
+  expect(formatMinutesSince(90)).toBe('1h30m');
+  expect(formatMinutesSince(24 * 60 + 5 * 60 + 12)).toBe('1d5h');
+  expect(formatMinutesSince(24 * 60)).toBe('1d');
 });

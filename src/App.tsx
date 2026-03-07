@@ -36,10 +36,24 @@ export function formatFadeMinutes(minutes: number): string {
   return `${hours}שעה ${mins}דק`;
 }
 
-function formatMinutesSince(minutes: number): string {
-  const hours = Math.floor(minutes / 60);
-  const mins = Math.round(minutes % 60);
-  return `${hours.toString().padStart(2, '0')}:${mins.toString().padStart(2, '0')}`;
+export function formatMinutesSince(minutes: number): string {
+  const totalMinutes = Math.max(0, Math.round(minutes));
+
+  if (totalMinutes < 60) {
+    return `${totalMinutes}m`;
+  }
+
+  if (totalMinutes < 24 * 60) {
+    const hours = Math.floor(totalMinutes / 60);
+    const mins = totalMinutes % 60;
+    if (mins === 0) return `${hours}h`;
+    return `${hours}h${mins}m`;
+  }
+
+  const days = Math.floor(totalMinutes / (24 * 60));
+  const hours = Math.floor((totalMinutes % (24 * 60)) / 60);
+  if (hours === 0) return `${days}d`;
+  return `${days}d${hours}h`;
 }
 
 const FADE_MINUTES_KEY = 'jinx.fadeMinutes';
@@ -822,7 +836,7 @@ function App() {
                   >
                     <div className="zoneName">{entry.name}</div>
                     <div className="zoneMeta">
-                      <span>לפני {entry.minutesSince} דק׳</span>
+                      <span>לפני {formatMinutesSince(entry.minutesSince)}</span>
                       <span className="zoneTimestamp">{formatAlarmTimestamp(entry.alarmAt)}</span>
                     </div>
                   </button>
@@ -909,7 +923,7 @@ function App() {
                         <div className="popupTitle">{polygon.name}</div>
                         {isMatched && alarmAt && minutesSince !== null ? (
                           <div className="popupBody">
-                            <div>דקות מאז אזעקה: {minutesSince}</div>
+                            <div>זמן מאז אזעקה: {formatMinutesSince(minutesSince)}</div>
                             <div>זמן אזעקה: {formatAlarmTimestamp(alarmAt)}</div>
                           </div>
                         ) : (
