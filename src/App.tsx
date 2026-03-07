@@ -295,6 +295,35 @@ function App() {
   const polygonLayersByNameRef = useRef<Map<string, LeafletPolygonLayer>>(new Map());
   const labelIconCacheRef = useRef<Map<string, DivIcon>>(new Map());
   const searchInputRef = useRef<HTMLInputElement | null>(null);
+  const searchBlurTimeoutRef = useRef<number | null>(null);
+
+  const handleSearchFocus = useCallback(() => {
+    if (searchBlurTimeoutRef.current !== null) {
+      window.clearTimeout(searchBlurTimeoutRef.current);
+      searchBlurTimeoutRef.current = null;
+    }
+    setIsSearchFocused(true);
+  }, []);
+
+  const handleSearchBlur = useCallback(() => {
+    if (searchBlurTimeoutRef.current !== null) {
+      window.clearTimeout(searchBlurTimeoutRef.current);
+    }
+    // Delay closing slightly so touch/click on a suggestion is still processed.
+    searchBlurTimeoutRef.current = window.setTimeout(() => {
+      setIsSearchFocused(false);
+      searchBlurTimeoutRef.current = null;
+    }, 120);
+  }, []);
+
+  useEffect(
+    () => () => {
+      if (searchBlurTimeoutRef.current !== null) {
+        window.clearTimeout(searchBlurTimeoutRef.current);
+      }
+    },
+    [],
+  );
 
   const refreshAlarms = useCallback(async () => {
     if (refreshInFlightRef.current) return refreshInFlightRef.current;
@@ -640,8 +669,8 @@ function App() {
                 aria-label="חיפוש אזור"
                 value={searchText}
                 onChange={(event) => setSearchText(event.target.value)}
-                onFocus={() => setIsSearchFocused(true)}
-                onBlur={() => setIsSearchFocused(false)}
+                onFocus={handleSearchFocus}
+                onBlur={handleSearchBlur}
                 onKeyDown={(event) => {
                   if (event.key === 'Escape') {
                     setSearchText('');
@@ -663,6 +692,7 @@ function App() {
                       key={name}
                       type="button"
                       className="searchResultButton"
+                      onPointerDown={(event) => event.preventDefault()}
                       onMouseDown={(event) => event.preventDefault()}
                       onClick={() => focusZoneByName(name)}
                     >
