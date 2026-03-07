@@ -27,6 +27,15 @@ export function formatFadeMinutes(minutes: number): string {
   return `${hours}שעה ${mins}דק`;
 }
 
+function formatMinutesSince(minutes: number): string {
+  const hours = Math.floor(minutes / 60);
+  const mins = Math.round(minutes % 60);
+  if (hours === 0) {
+    return `${mins}:00`;
+  }
+  return `${hours}:${mins.toString().padStart(2, '0')}`;
+}
+
 const FADE_MINUTES_KEY = 'jinx.fadeMinutes';
 const DEFAULT_FADE_MINUTES = 60;
 const BASEMAP_KEY = 'jinx.basemap';
@@ -658,7 +667,7 @@ function App() {
                       fillOpacity: 0.08,
                     };
                 const tooltipContent =
-                  minutesSince !== null ? `${minutesSince}\n${polygon.name}` : '';
+                  minutesSince !== null ? formatMinutesSince(minutesSince) : '';
 
                 return (
                   <LeafletPolygon
