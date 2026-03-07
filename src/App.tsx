@@ -22,39 +22,7 @@ import type {
 } from 'leaflet';
 import { divIcon } from 'leaflet';
 import { computeFadeOpacity, computeMinutesSince } from './map/fade';
-
-// eslint-disable-next-line react-refresh/only-export-components
-export function formatFadeMinutes(minutes: number): string {
-  if (minutes < 60) {
-    return `${minutes}דק`;
-  }
-  const hours = Math.floor(minutes / 60);
-  const mins = minutes % 60;
-  if (mins === 0) {
-    return hours === 1 ? `1שעה` : `${hours}שעות`;
-  }
-  return `${hours}שעה ${mins}דק`;
-}
-
-export function formatMinutesSince(minutes: number): string {
-  const totalMinutes = Math.max(0, Math.round(minutes));
-
-  if (totalMinutes < 60) {
-    return `${totalMinutes}m`;
-  }
-
-  if (totalMinutes < 24 * 60) {
-    const hours = Math.floor(totalMinutes / 60);
-    const mins = totalMinutes % 60;
-    if (mins === 0) return `${hours}h`;
-    return `${hours}h${mins}m`;
-  }
-
-  const days = Math.floor(totalMinutes / (24 * 60));
-  const hours = Math.floor((totalMinutes % (24 * 60)) / 60);
-  if (hours === 0) return `${days}d`;
-  return `${days}d${hours}h`;
-}
+import { formatFadeMinutes, formatMinutesSince } from './formatters';
 
 const FADE_MINUTES_KEY = 'jinx.fadeMinutes';
 const DEFAULT_FADE_MINUTES = 60;
@@ -753,15 +721,11 @@ function App() {
         </div>
         <div className="dataAttribution" aria-label="ייחוס נתונים">
           נתונים: פוליגונים מ־
-          <a
-            href="https://github.com/amitfin/oref_alert"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
+          <a href="https://github.com/amitfin/oref_alert" target="_blank" rel="noopener noreferrer">
             {' '}
             amitfin/oref_alert
-          </a>
-          {' '}• אזעקות מ־
+          </a>{' '}
+          • אזעקות מ־
           <a
             href="https://github.com/yuval-harpaz/alarms"
             target="_blank"

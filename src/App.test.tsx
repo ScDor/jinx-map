@@ -72,7 +72,8 @@ vi.mock('react-leaflet', async () => {
   };
 });
 
-import App, { formatMinutesSince } from './App';
+import App from './App';
+import { formatMinutesSince } from './formatters';
 import { fetchAndComputeAlarms } from './data/alarms';
 
 const polygonsPayload = {
@@ -135,7 +136,7 @@ test('renders Hebrew RTL shell controls', () => {
   expect(screen.getByRole('button', { name: 'רענון' })).toBeInTheDocument();
   expect(screen.getByRole('button', { name: 'הגדרות' })).toBeInTheDocument();
   const status = screen.getByLabelText('סטטוס');
-  expect(status).toHaveTextContent('אב־טיפוס מקומי');
+  expect(status).toHaveTextContent('טוען פוליגונים…');
   expect(status).toHaveTextContent('ריענון כל 60 שנ׳');
 });
 
