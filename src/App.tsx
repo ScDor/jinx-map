@@ -126,7 +126,7 @@ function isPointInRing(point: [number, number], ring: [number, number][]): boole
     if (isPointOnSegment(pointLat, pointLng, latA, lngA, latB, lngB)) return true;
 
     const intersects =
-      (latA > pointLat) !== (latB > pointLat) &&
+      latA > pointLat !== latB > pointLat &&
       pointLng < ((lngB - lngA) * (pointLat - latA)) / (latB - latA) + lngA;
 
     if (intersects) inside = !inside;
@@ -503,56 +503,59 @@ function App() {
     return candidates;
   }, [effectiveZoneLastAlarmMs, labelAnchorByZoneKey, nowMs, polygonsByName]);
 
-  const declutterLabels = useCallback((map: LeafletMap) => {
-    const policy = computeLabelPolicy(map.getZoom());
-    if (!policy.enabled || policy.maxLabels <= 0) {
-      const allHidden = new Set(labelCandidates.map((candidate) => candidate.zoneKey));
-      setHiddenLabelZoneKeys((current) => (setsEqual(current, allHidden) ? current : allHidden));
-      return;
-    }
-
-    const visibleBoxes: Array<{ left: number; right: number; top: number; bottom: number }> = [];
-    const hidden = new Set<string>();
-    let visibleCount = 0;
-
-    for (const candidate of labelCandidates) {
-      if (visibleCount >= policy.maxLabels) {
-        hidden.add(candidate.zoneKey);
-        continue;
+  const declutterLabels = useCallback(
+    (map: LeafletMap) => {
+      const policy = computeLabelPolicy(map.getZoom());
+      if (!policy.enabled || policy.maxLabels <= 0) {
+        const allHidden = new Set(labelCandidates.map((candidate) => candidate.zoneKey));
+        setHiddenLabelZoneKeys((current) => (setsEqual(current, allHidden) ? current : allHidden));
+        return;
       }
 
-      const point = map.latLngToContainerPoint(candidate.anchor);
-      const width = Math.max(28, candidate.label.length * 8 + 12);
-      const height = 22;
-      const left = point.x - width / 2;
-      const right = left + width;
-      const top = point.y - height / 2;
-      const bottom = top + height;
+      const visibleBoxes: Array<{ left: number; right: number; top: number; bottom: number }> = [];
+      const hidden = new Set<string>();
+      let visibleCount = 0;
 
-      let overlaps = false;
-      for (const box of visibleBoxes) {
-        if (
-          left < box.right + policy.marginPx &&
-          right > box.left - policy.marginPx &&
-          top < box.bottom + policy.marginPx &&
-          bottom > box.top - policy.marginPx
-        ) {
-          overlaps = true;
-          break;
+      for (const candidate of labelCandidates) {
+        if (visibleCount >= policy.maxLabels) {
+          hidden.add(candidate.zoneKey);
+          continue;
         }
+
+        const point = map.latLngToContainerPoint(candidate.anchor);
+        const width = Math.max(28, candidate.label.length * 8 + 12);
+        const height = 22;
+        const left = point.x - width / 2;
+        const right = left + width;
+        const top = point.y - height / 2;
+        const bottom = top + height;
+
+        let overlaps = false;
+        for (const box of visibleBoxes) {
+          if (
+            left < box.right + policy.marginPx &&
+            right > box.left - policy.marginPx &&
+            top < box.bottom + policy.marginPx &&
+            bottom > box.top - policy.marginPx
+          ) {
+            overlaps = true;
+            break;
+          }
+        }
+
+        if (overlaps) {
+          hidden.add(candidate.zoneKey);
+          continue;
+        }
+
+        visibleBoxes.push({ left, right, top, bottom });
+        visibleCount += 1;
       }
 
-      if (overlaps) {
-        hidden.add(candidate.zoneKey);
-        continue;
-      }
-
-      visibleBoxes.push({ left, right, top, bottom });
-      visibleCount += 1;
-    }
-
-    setHiddenLabelZoneKeys((current) => (setsEqual(current, hidden) ? current : hidden));
-  }, [labelCandidates]);
+      setHiddenLabelZoneKeys((current) => (setsEqual(current, hidden) ? current : hidden));
+    },
+    [labelCandidates],
+  );
 
   const handleMapViewChanged = useCallback(
     (map: LeafletMap) => {
