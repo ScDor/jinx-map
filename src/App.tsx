@@ -643,8 +643,7 @@ function App() {
                 const alarmAt = csvAtMs !== null ? new Date(csvAtMs) : null;
 
                 const positions: LatLngExpression[] | LatLngExpression[][] = polygon.rings;
-                const polygonSizeKm = computePolygonSizeKm(positions);
-                const showTooltip = polygonSizeKm >= 20;
+                computePolygonSizeKm(positions);
                 const pathOptions = isMatched
                   ? {
                       color: 'transparent',
@@ -659,18 +658,14 @@ function App() {
                       fillOpacity: 0.08,
                     };
                 const tooltipContent =
-                  minutesSince !== null
-                    ? showTooltip && polygonSizeKm >= 30
-                      ? `${minutesSince}\n${polygon.name}`
-                      : String(minutesSince)
-                    : '';
+                  minutesSince !== null ? `${minutesSince}\n${polygon.name}` : '';
 
                 return (
                   <LeafletPolygon
                     key={polygon.name}
                     positions={positions}
                     pathOptions={pathOptions}
-                    interactive={isMatched && minutesSince !== null && showTooltip}
+                    interactive={isMatched && minutesSince !== null}
                     ref={(layer) => {
                       if (layer) {
                         polygonLayersByNameRef.current.set(polygon.name, layer);
@@ -679,7 +674,7 @@ function App() {
                       }
                     }}
                   >
-                    {isMatched && minutesSince !== null && showTooltip ? (
+                    {isMatched && minutesSince !== null ? (
                       <Tooltip direction="center" permanent className="polygon-tooltip">
                         {tooltipContent}
                       </Tooltip>
