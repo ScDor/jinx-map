@@ -63,6 +63,8 @@ const MAP_TICK_MS = 30_000;
 const SEARCH_DEBOUNCE_MS = 180;
 const SEARCH_RESULTS_LIMIT = 7;
 const RECENT_ZONES_LIMIT = 14;
+const DEFAULT_MAP_ZOOM = 8;
+const INTERSECTING_LABEL_DEDUP_MAX_ZOOM = DEFAULT_MAP_ZOOM + 2;
 type LabelPolicy = { enabled: boolean; maxLabels: number; marginPx: number };
 
 function computeLabelPolicy(zoom: number): LabelPolicy {
@@ -124,6 +126,78 @@ function isPointInsidePolygon(point: [number, number], rings: [number, number][]
     if (isPointInRing(point, rings[index])) return false;
   }
   return true;
+}
+
+function boundsIntersect(a: [number, number, number, number], b: [number, number, number, number]): boolean {
+  const [aMinLat, aMinLng, aMaxLat, aMaxLng] = a;
+  const [bMinLat, bMinLng, bMaxLat, bMaxLng] = b;
+  return aMinLat <= bMaxLat && aMaxLat >= bMinLat && aMinLng <= bMaxLng && aMaxLng >= bMinLng;
+}
+
+function orientation(
+  a: [number, number],
+  b: [number, number],
+  c: [number, number],
+): number {
+  const cross = (b[1] - a[1]) * (c[0] - a[0]) - (b[0] - a[0]) * (c[1] - a[1]);
+  if (Math.abs(cross) < 1e-10) return 0;
+  return cross > 0 ? 1 : -1;
+}
+
+function segmentsIntersect(
+  a1: [number, number],
+  a2: [number, number],
+  b1: [number, number],
+  b2: [number, number],
+): boolean {
+  const o1 = orientation(a1, a2, b1);
+  const o2 = orientation(a1, a2, b2);
+  const o3 = orientation(b1, b2, a1);
+  const o4 = orientation(b1, b2, a2);
+
+  if (o1 !== o2 && o3 !== o4) return true;
+  if (o1 === 0 && isPointOnSegment(b1[0], b1[1], a1[0], a1[1], a2[0], a2[1])) return true;
+  if (o2 === 0 && isPointOnSegment(b2[0], b2[1], a1[0], a1[1], a2[0], a2[1])) return true;
+  if (o3 === 0 && isPointOnSegment(a1[0], a1[1], b1[0], b1[1], b2[0], b2[1])) return true;
+  if (o4 === 0 && isPointOnSegment(a2[0], a2[1], b1[0], b1[1], b2[0], b2[1])) return true;
+  return false;
+}
+
+function ringsIntersect(ringsA: [number, number][][], ringsB: [number, number][][]): boolean {
+  for (const ringA of ringsA) {
+    if (ringA.length < 2) continue;
+    for (let i = 0; i < ringA.length; i += 1) {
+      const a1 = ringA[i] as [number, number];
+      const a2 = ringA[(i + 1) % ringA.length] as [number, number];
+      for (const ringB of ringsB) {
+        if (ringB.length < 2) continue;
+        for (let j = 0; j < ringB.length; j += 1) {
+          const b1 = ringB[j] as [number, number];
+          const b2 = ringB[(j + 1) % ringB.length] as [number, number];
+          if (segmentsIntersect(a1, a2, b1, b2)) return true;
+        }
+      }
+    }
+  }
+  return false;
+}
+
+function polygonsIntersect(a: NormalizedPolygon, b: NormalizedPolygon): boolean {
+  if (!boundsIntersect(a.bounds, b.bounds)) return false;
+
+  const ringsA = a.rings as [number, number][][];
+  const ringsB = b.rings as [number, number][][];
+  if (ringsA.length === 0 || ringsB.length === 0) return false;
+
+  if (ringsIntersect(ringsA, ringsB)) return true;
+
+  const pointInA = findPointInsidePolygon(a);
+  if (isPointInsidePolygon(pointInA, ringsB)) return true;
+
+  const pointInB = findPointInsidePolygon(b);
+  if (isPointInsidePolygon(pointInB, ringsA)) return true;
+
+  return false;
 }
 
 function findPointInsidePolygon(polygon: NormalizedPolygon): [number, number] {
@@ -287,12 +361,13 @@ function App() {
   const [isAlarmsLoading, setIsAlarmsLoading] = useState(false);
   const [alarmsState, setAlarmsState] = useState<AlarmsComputedStateV1 | null>(initialAlarms.state);
   const [nowMs, setNowMs] = useState(() => Date.now());
-  const [mapZoom, setMapZoom] = useState(8);
+  const [mapZoom, setMapZoom] = useState(DEFAULT_MAP_ZOOM);
   const [hiddenLabelZoneKeys, setHiddenLabelZoneKeys] = useState<Set<string>>(() => new Set());
   const isMountedRef = useRef(true);
   const refreshInFlightRef = useRef<Promise<void> | null>(null);
   const mapRef = useRef<LeafletMap | null>(null);
   const polygonLayersByNameRef = useRef<Map<string, LeafletPolygonLayer>>(new Map());
+  const polygonIntersectionCacheRef = useRef<Map<string, boolean>>(new Map());
   const labelIconCacheRef = useRef<Map<string, DivIcon>>(new Map());
   const searchInputRef = useRef<HTMLInputElement | null>(null);
   const searchBlurTimeoutRef = useRef<number | null>(null);
@@ -457,6 +532,10 @@ function App() {
     }));
   }, [polygons]);
 
+  useEffect(() => {
+    polygonIntersectionCacheRef.current.clear();
+  }, [polygons]);
+
   const searchMatches = useMemo(() => {
     const query = debouncedSearchText.normalize('NFKC');
     if (!query) return [];
@@ -516,7 +595,8 @@ function App() {
 
   const declutterLabels = useCallback(
     (map: LeafletMap) => {
-      const policy = computeLabelPolicy(map.getZoom());
+      const zoom = map.getZoom();
+      const policy = computeLabelPolicy(zoom);
       if (!policy.enabled || policy.maxLabels <= 0) {
         const allHidden = new Set(labelCandidates.map((candidate) => candidate.zoneKey));
         setHiddenLabelZoneKeys((current) => (setsEqual(current, allHidden) ? current : allHidden));
@@ -526,8 +606,55 @@ function App() {
       const visibleBoxes: Array<{ left: number; right: number; top: number; bottom: number }> = [];
       const hidden = new Set<string>();
       let visibleCount = 0;
+      const shouldDedupIntersectingSameLabel =
+        zoom >= DEFAULT_MAP_ZOOM && zoom <= INTERSECTING_LABEL_DEDUP_MAX_ZOOM;
+
+      if (shouldDedupIntersectingSameLabel) {
+        const byLabel = new Map<string, typeof labelCandidates>();
+        for (const candidate of labelCandidates) {
+          const entries = byLabel.get(candidate.label);
+          if (entries) {
+            entries.push(candidate);
+          } else {
+            byLabel.set(candidate.label, [candidate]);
+          }
+        }
+
+        const zonePairsIntersect = (zoneA: string, zoneB: string): boolean => {
+          const pairKey = zoneA < zoneB ? `${zoneA}|${zoneB}` : `${zoneB}|${zoneA}`;
+          const cached = polygonIntersectionCacheRef.current.get(pairKey);
+          if (cached !== undefined) return cached;
+
+          const polygonA = polygonsByName.get(zoneA);
+          const polygonB = polygonsByName.get(zoneB);
+          const intersects = polygonA && polygonB ? polygonsIntersect(polygonA, polygonB) : false;
+          polygonIntersectionCacheRef.current.set(pairKey, intersects);
+          return intersects;
+        };
+
+        for (const [, sameLabelCandidates] of byLabel) {
+          if (sameLabelCandidates.length < 2) continue;
+          const keptZoneKeys: string[] = [];
+          for (const candidate of sameLabelCandidates) {
+            let intersectsKept = false;
+            for (const keptZoneKey of keptZoneKeys) {
+              if (zonePairsIntersect(candidate.zoneKey, keptZoneKey)) {
+                intersectsKept = true;
+                break;
+              }
+            }
+            if (intersectsKept) {
+              hidden.add(candidate.zoneKey);
+              continue;
+            }
+            keptZoneKeys.push(candidate.zoneKey);
+          }
+        }
+      }
 
       for (const candidate of labelCandidates) {
+        if (hidden.has(candidate.zoneKey)) continue;
+
         if (visibleCount >= policy.maxLabels) {
           hidden.add(candidate.zoneKey);
           continue;
@@ -565,7 +692,7 @@ function App() {
 
       setHiddenLabelZoneKeys((current) => (setsEqual(current, hidden) ? current : hidden));
     },
-    [labelCandidates],
+    [labelCandidates, polygonsByName],
   );
 
   const handleMapViewChanged = useCallback(
@@ -864,7 +991,7 @@ function App() {
           <MapContainer
             className="mapContainer"
             center={[31.7, 35.0]}
-            zoom={8}
+            zoom={DEFAULT_MAP_ZOOM}
             bounds={polygonsBounds ?? undefined}
             boundsOptions={{ padding: [12, 12], maxZoom: 10 }}
             scrollWheelZoom
