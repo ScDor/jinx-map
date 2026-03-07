@@ -1,5 +1,6 @@
 import Papa from 'papaparse';
 import { parse, parseISO } from 'date-fns';
+import { mapCsvZoneToPolygonName } from './zoneNameMapping';
 
 export type AlarmsComputedStateV1 = {
   version: 1;
@@ -55,13 +56,6 @@ export function storeAlarmsState(state: AlarmsComputedStateV1): void {
   }
 }
 
-function normalizeZoneName(raw: string): string {
-  return raw
-    .replace(/^\uFEFF/, '')
-    .trim()
-    .normalize('NFKC');
-}
-
 function parseAlarmTimestamp(raw: string): Date | null {
   const trimmed = raw.trim();
   if (!trimmed) return null;
@@ -104,7 +98,7 @@ export function parseAlarmsCsv(
   for (const row of result.data) {
     if (!Array.isArray(row) || row.length < 2) continue;
     const timeRaw = String(row[0] ?? '').trim();
-    const citiesRaw = normalizeZoneName(String(row[1] ?? ''));
+    const citiesRaw = mapCsvZoneToPolygonName(String(row[1] ?? ''));
     if (!timeRaw || !citiesRaw) continue;
 
     if (timeRaw.toLowerCase() === 'time' && citiesRaw.toLowerCase() === 'cities') continue;
