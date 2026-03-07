@@ -652,7 +652,8 @@ function App() {
                 const alarmAt = csvAtMs !== null ? new Date(csvAtMs) : null;
 
                 const positions: LatLngExpression[] | LatLngExpression[][] = polygon.rings;
-                computePolygonSizeKm(positions);
+                const polygonSizeKm = computePolygonSizeKm(positions);
+                const showLabel = polygonSizeKm >= 8;
                 const pathOptions = isMatched
                   ? {
                       color: 'transparent',
@@ -683,7 +684,7 @@ function App() {
                       }
                     }}
                   >
-                    {isMatched && minutesSince !== null ? (
+                    {isMatched && minutesSince !== null && showLabel ? (
                       <Tooltip direction="center" permanent className="polygon-tooltip">
                         {tooltipContent}
                       </Tooltip>
